@@ -96,10 +96,10 @@ async def predict_cooling_effect(input_data: PredictionInput):
     """
     Predict cooling effect of green cover increase at a specific location
     
-    - **ndvi**: Current vegetation index (0-1)
-    - **lon**: Longitude coordinate
-    - **lat**: Latitude coordinate  
-    - **green_cover_increase**: Amount to increase NDVI (default 0.2)
+    - ndvi: Current vegetation index (0-1)
+    - lon: Longitude coordinate
+    - lat: Latitude coordinate  
+    - green_cover_increase: Amount to increase NDVI (default 0.2)
     """
     if model is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
@@ -174,7 +174,7 @@ async def simulate_area(input_data: AreaSimulationInput):
     
     for lon in lons:
         for lat in lats:
-            # assume baseline NDVI of 0.3 for now (can be improved with real data later)
+            # assume baseline NDVI of 0.3 for now (CHANGE LATER TO FETCH FR0M SOME SENTINEL API?)
             ndvi_baseline = 0.3
             
             try:

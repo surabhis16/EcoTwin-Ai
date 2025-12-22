@@ -9,18 +9,16 @@ import { Sparkles, ChevronRight, Check } from "lucide-react"
 import { useState } from "react"
 
 interface PolicySimulationEngineProps {
-  onSimulate: (data: {
-    area: string
-    intervention: string
-    intensity: number
-  }) => void
+  onSimulate: (data: any) => void
 }
 
 export function PolicySimulationEngine({ onSimulate }: PolicySimulationEngineProps) {
   const [currentStep, setCurrentStep] = useState(1)
   const [area, setArea] = useState("")
   const [intervention, setIntervention] = useState("")
-  const [intensity, setIntensity] = useState([70])
+  const [intensity, setIntensity] = useState([50])
+  const [isSimulating, setIsSimulating] = useState(false)
+  const [areaData, setAreaData] = useState<any>(null)
 
   const steps = [
     { id: 1, name: "Select Area" },
@@ -30,17 +28,116 @@ export function PolicySimulationEngine({ onSimulate }: PolicySimulationEnginePro
     { id: 5, name: "Review Outcomes" },
   ]
 
-  const handleNext = () => {
+  // Area coordinates with baseline NDVI for these areas (to give policy selection option)
+  const areas: Record<string, { lon: number, lat: number, baseline_ndvi: number }> = {
+    koramangala: { lon: 77.6269, lat: 12.9279, baseline_ndvi: 0.35 },
+    whitefield: { lon: 77.7499, lat: 12.9698, baseline_ndvi: 0.25 },
+    indiranagar: { lon: 77.6408, lat: 12.9716, baseline_ndvi: 0.30 },
+    jayanagar: { lon: 77.5833, lat: 12.9250, baseline_ndvi: 0.40 },
+    malleshwaram: { lon: 77.5703, lat: 13.0034, baseline_ndvi: 0.38 },
+  }
+
+  const handleNext = async () => {
     if (currentStep < 4) {
+      // Fetch baseline data when area is selected
+      if (currentStep === 1 && area) {
+        await fetchAreaBaseline(area)
+      }
       setCurrentStep(currentStep + 1)
     } else if (currentStep === 4) {
-      // Run simulation
-      onSimulate({
+      await runSimulation()
+    }
+  }
+
+  const fetchAreaBaseline = async (areaName: string) => {
+    const coords = areas[areaName]
+    if (!coords) return
+
+    try {
+      const response = await fetch('http://localhost:8000/api/uhi/predict', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ndvi: coords.baseline_ndvi,
+          lon: coords.lon,
+          lat: coords.lat,
+          green_cover_increase: 0 // current state (initial)
+        })
+      })
+
+      const data = await response.json()
+      setAreaData(data)
+      //console.log(`Baseline for ${areaName}:`, data)
+    } catch (err) {
+      console.error("Failed to fetch baseline:", err)
+    }
+  }
+
+  const runSimulation = async () => {
+    setIsSimulating(true)
+
+    try {
+      const coords = areas[area]
+
+      // Calculate NDVI increase based on intervention and intensity
+      let ndviIncrease = 0
+      if (intervention === "green") {
+        // Green infrastructure: direct NDVI increase
+        ndviIncrease = (intensity[0] / 100) * 0.3 // Max 0.3 NDVI increase at 100%
+      } else if (intervention === "cooling") {
+        // Cooling corridors: moderate NDVI increase + albedo effect
+        ndviIncrease = (intensity[0] / 100) * 0.2
+      } else if (intervention === "materials") {
+        // Sustainable materials: small indirect greening effect
+        ndviIncrease = (intensity[0] / 100) * 0.1
+      }
+
+      // Call api with params
+      const response = await fetch('http://localhost:8000/api/uhi/predict', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ndvi: coords.baseline_ndvi,
+          lon: coords.lon,
+          lat: coords.lat,
+          green_cover_increase: ndviIncrease
+        })
+      })
+
+      const prediction = await response.json()
+
+      // Calculate CO2 sequestration 
+      // Based on: 1 hectare of urban trees sequesters ~2.5 tons CO2/year
+      const areaHectares = 100 // Assume 100 hectares per neighborhood
+      const ndviGain = prediction.ndvi_after - prediction.ndvi_before
+      const co2Offset = (ndviGain * areaHectares * 2.5 * 10).toFixed(0) // tons/year
+
+      const result = {
         area,
         intervention,
         intensity: intensity[0],
-      })
+        // data from api (prediction)
+        temperatureReduction: prediction.cooling_effect,
+        lstBefore: prediction.lst_before,
+        lstAfter: prediction.lst_after,
+        ndviBefore: prediction.ndvi_before,
+        ndviAfter: prediction.ndvi_after,
+        riskReduction: prediction.risk_reduction,
+        co2Offset: parseFloat(co2Offset),
+        // Metadata
+        coordinates: { lon: coords.lon, lat: coords.lat }
+      }
+
+      console.log("Simulation Result:", result)
+
+      onSimulate(result)
       setCurrentStep(5)
+
+    } catch (err) {
+      console.error("Simulation failed:", err)
+      alert("Simulation failed. Is the backend running?")
+    } finally {
+      setIsSimulating(false)
     }
   }
 
@@ -48,16 +145,16 @@ export function PolicySimulationEngine({ onSimulate }: PolicySimulationEnginePro
     setCurrentStep(1)
     setArea("")
     setIntervention("")
-    setIntensity([70])
+    setIntensity([50])
+    setAreaData(null)
   }
 
   const canProceed = () => {
     if (currentStep === 1) return area !== ""
     if (currentStep === 2) return intervention !== ""
-    if (currentStep === 3) return true
-    if (currentStep === 4) return true
-    return false
+    return true
   }
+
 
   return (
     <Card className="p-6 bg-card/50 backdrop-blur-sm">
@@ -125,9 +222,13 @@ export function PolicySimulationEngine({ onSimulate }: PolicySimulationEnginePro
                 </SelectContent>
               </Select>
             </div>
-            <p className="text-sm text-muted-foreground">
-              Select the urban district where the intervention will be applied.
-            </p>
+            {areaData && (
+              <div className="p-3 bg-muted/50 rounded-lg text-sm">
+                <p className="font-semibold mb-1">Baseline Data:</p>
+                <p>Current Temperature: {areaData.lst_before.toFixed(2)}°C</p>
+                <p>Risk Level: {areaData.risk_reduction.split(' → ')[0]}</p>
+              </div>
+            )}
           </div>
         )}
 
@@ -195,10 +296,19 @@ export function PolicySimulationEngine({ onSimulate }: PolicySimulationEnginePro
                 <span className="text-sm text-muted-foreground">Intensity</span>
                 <span className="font-semibold">{intensity[0]}%</span>
               </div>
+              {areaData && (
+                <>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-muted-foreground">Baseline LST</span>
+                    <span className="font-semibold">{areaData.lst_before.toFixed(2)}°C</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-muted-foreground">Baseline NDVI</span>
+                    <span className="font-semibold">{areaData.ndvi_before.toFixed(3)}</span>
+                  </div>
+                </>
+              )}
             </div>
-            <p className="text-sm text-muted-foreground">
-              Ready to run impact prediction. Click below to simulate the future state of the city.
-            </p>
           </div>
         )}
 
@@ -226,8 +336,10 @@ export function PolicySimulationEngine({ onSimulate }: PolicySimulationEnginePro
               Back
             </Button>
           )}
-          <Button onClick={handleNext} disabled={!canProceed()} className="flex-1">
-            {currentStep === 4 ? (
+          <Button onClick={handleNext} disabled={!canProceed() || isSimulating} className="flex-1">
+            {isSimulating ? (
+              <>Running simulation...</>
+            ) : currentStep === 4 ? (
               <>
                 <Sparkles className="mr-2 h-4 w-4" />
                 Run Impact Prediction
