@@ -13,25 +13,19 @@ interface LayerState {
 }
 
 interface Visualization3DProps {
-  onWardSelect?: (wardData: {
-    name: string
-    lon: number
-    lat: number
-    ndvi: number
-    lst: number
-  }) => void
+  onWardSelect?: (wardData: any) => void
 }
 
-// Store the viewer ref globally for external access
+// Storing the viewer ref globally for external access
 let globalViewerRef: any = null
 
 export const updateUHIForSimulation = async (simulationData: any) => {
-  if (!globalViewerRef || !simulationData.coordinates) return
+  if (!globalViewerRef) return
 
   const Cesium = await import("cesium")
-  const { lon, lat } = simulationData.coordinates
+  const { lon, lat } = simulationData.coordinates || { lon: 77.5946, lat: 12.9716 }
 
-  // highlighted marker showing the simulated area
+  // Create highlighted marker showing the simulated area
   const simulationMarker = globalViewerRef.entities.add({
     position: Cesium.Cartesian3.fromDegrees(lon, lat),
     ellipse: {
@@ -43,12 +37,50 @@ export const updateUHIForSimulation = async (simulationData: any) => {
       heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
     },
     description: `
-      <div style="font-family: sans-serif; padding: 12px;">
-        <h3 style="color: #059669;">Simulation Result</h3>
-        <p><strong>Temperature Reduction:</strong> ${simulationData.temperatureReduction.toFixed(2)}°C</p>
-        <p><strong>Before:</strong> ${simulationData.lstBefore.toFixed(2)}°C</p>
-        <p><strong>After:</strong> ${simulationData.lstAfter.toFixed(2)}°C</p>
-        <p><strong>Risk:</strong> ${simulationData.riskReduction}</p>
+      <div style="font-family: sans-serif; padding: 16px; max-width: 320px;">
+        <h3 style="color: #059669; margin: 0 0 12px 0; font-size: 18px; display: flex; align-items: center; gap: 8px;">
+          ${simulationData.wardName || simulationData.area || 'Simulation Result'}
+        </h3>
+        
+        <div style="background: #f0fdf4; padding: 12px; border-radius: 8px; margin-bottom: 12px;">
+          <div style="font-size: 28px; font-weight: bold; color: #059669; text-align: center;">
+            ${simulationData.temperatureReduction?.toFixed(2) || '0.00'}°C
+          </div>
+          <div style="text-align: center; font-size: 12px; color: #666; margin-top: 4px;">
+            Temperature Reduction
+          </div>
+        </div>
+        
+        <table style="width: 100%; font-size: 13px; border-collapse: collapse;">
+          <tr">
+            <td style="padding: 8px 0; color: #666;">Baseline LST:</td>
+            <td style="padding: 8px 0; font-weight: 600; text-align: right;">${simulationData.lstBefore?.toFixed(2) || '0.00'}°C</td>
+          </tr>
+          <tr">
+            <td style="padding: 8px 0; color: #666;">Projected LST:</td>
+            <td style="padding: 8px 0; font-weight: 600; text-align: right; color: #059669;">${simulationData.lstAfter?.toFixed(2) || '0.00'}°C</td>
+          </tr>
+          <tr">
+            <td style="padding: 8px 0; color: #666;">NDVI Change:</td>
+            <td style="padding: 8px 0; font-weight: 600; text-align: right;">${simulationData.ndviBefore?.toFixed(3) || '0.000'} → ${simulationData.ndviAfter?.toFixed(3) || '0.000'}</td>
+          </tr>
+          <tr">
+            <td style="padding: 8px 0; color: #666;">Risk Status:</td>
+            <td style="padding: 8px 0; font-weight: 600; text-align: right;">
+              <span style="color: ${simulationData.risk_before === 'High' || simulationData.risk_before === 'Extreme' ? '#DC2626' : '#F59E0B'};">${simulationData.risk_before || 'Unknown'}</span>
+              →
+              <span style="color: ${simulationData.risk_after === 'Low' ? '#059669' : '#F59E0B'};">${simulationData.risk_after || 'Unknown'}</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 8px 0; color: #666;">CO₂ Offset:</td>
+            <td style="padding: 8px 0; font-weight: 600; text-align: right; color: #3B82F6;">${simulationData.co2Offset || 0} t/y</td>
+          </tr>
+        </table>
+        
+        <div style="margin-top: 12px; padding: 10px; background: #a9a9a9; border-radius: 6px; font-size: 12px;">
+          <strong>Intervention:</strong> ${simulationData.intervention || 'N/A'} @ ${simulationData.intensity || 0}% intensity
+        </div>
       </div>
     `
   })
@@ -85,45 +117,57 @@ export function Visualization3D({ onWardSelect }: Visualization3DProps) {
   const uhiEntitiesRef = useRef<any[]>([])
 
   const handleWardClick = async (entity: any) => {
-    if (!entity || !entity.lst_current) return
+    if (!entity || !entity.ward_number) return
 
-    const Cesium = await import("cesium")
+    try {
+      // Fetch current ward details when clicked
+      const res = await fetch('http://localhost:8000/api/uhi/simulate-ward', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ward_id: entity.ward_number, intensity: 0 })
+      })
+      const data = await res.json()
 
-    // Highlight selected ward
-    const originalColor = entity.lst_current >= 40
-      ? Cesium.Color.fromCssColorString('#DC2626')
-      : entity.lst_current >= 35
-        ? Cesium.Color.fromCssColorString('#F59E0B')
-        : Cesium.Color.fromCssColorString('#059669')
+      const Cesium = await import("cesium")
 
-    entity.polygon.material = new Cesium.ColorMaterialProperty(
-      Cesium.Color.CYAN.withAlpha(0.8)
-    )
+      // Highlight selected ward
+      const originalColor = data.lst_before >= 45
+        ? Cesium.Color.fromCssColorString('#7f1d1d')
+        : data.lst_before >= 40
+          ? Cesium.Color.fromCssColorString('#DC2626')
+          : data.lst_before >= 35
+            ? Cesium.Color.fromCssColorString('#F59E0B')
+            : Cesium.Color.fromCssColorString('#059669')
 
-    // Reset after 3 seconds
-    setTimeout(() => {
       entity.polygon.material = new Cesium.ColorMaterialProperty(
-        originalColor.withAlpha(0.6)
+        Cesium.Color.CYAN.withAlpha(0.8)
       )
-    }, 3000)
 
-    const wardData = {
-      name: entity.name || "Unknown Ward",
-      lon: entity.lon,
-      lat: entity.lat,
-      ndvi: entity.ndvi_current,
-      lst: entity.lst_current
+      // Reset after 3 seconds
+      setTimeout(() => {
+        entity.polygon.material = new Cesium.ColorMaterialProperty(
+          originalColor.withAlpha(0.5)
+        )
+      }, 3000)
+
+      const wardData = {
+        ...data,
+        wardId: entity.ward_number,
+        name: entity.name || `Ward ${entity.ward_number}`
+      }
+
+      console.log("Ward clicked:", wardData)
+
+      // Call parent callback if provided
+      if (onWardSelect) {
+        onWardSelect(wardData)
+      }
+
+      // Update selection display
+      setSelectedWard(wardData.name)
+    } catch (err) {
+      console.error("Failed to fetch ward data:", err)
     }
-
-    console.log("Ward clicked:", wardData)
-
-    // Call parent callback if provided
-    if (onWardSelect) {
-      onWardSelect(wardData)
-    }
-
-    // Also update selection display
-    setSelectedWard(wardData.name)
   }
 
   useEffect(() => {
@@ -199,14 +243,15 @@ export function Visualization3D({ onWardSelect }: Visualization3DProps) {
         setStatus("Loading ward data...")
 
         try {
-          await loadWardsData(viewer, Cesium)
+          await loadWardsDataOptimized(viewer, Cesium)
         } catch (err) {
           console.warn("Failed to load ward data:", err)
+          setError("Failed to load ward data. Using fallback visualization.")
           createFallbackVisualization(viewer, Cesium)
         }
 
         viewer.selectedEntityChanged.addEventListener((entity: any) => {
-          if (entity && entity.name) {
+          if (entity && entity.ward_number) {
             handleWardClick(entity)
           } else {
             setSelectedWard(null)
@@ -223,7 +268,19 @@ export function Visualization3D({ onWardSelect }: Visualization3DProps) {
       }
     }
 
-    const loadWardsData = async (viewer: any, Cesium: any) => {
+    const loadWardsDataOptimized = async (viewer: any, Cesium: any) => {
+      setStatus("Fetching all ward temperatures...")
+
+      // Fetch all ward baselines at once 
+      const baselineRes = await fetch('http://localhost:8000/api/uhi/all-ward-baselines')
+      if (!baselineRes.ok) throw new Error('Failed to fetch ward baselines')
+
+      const baselines = await baselineRes.json()
+      console.log("Loaded baselines for", Object.keys(baselines).length, "wards")
+
+      setStatus("Loading ward boundaries...")
+
+      // Load KML with ward shapes
       const timeoutPromise = new Promise((_, reject) =>
         setTimeout(() => reject(new Error("KML loading timeout (30s)")), 30000)
       )
@@ -235,93 +292,79 @@ export function Visualization3D({ onWardSelect }: Visualization3DProps) {
       })
 
       const dataSource: any = await Promise.race([loadPromise, timeoutPromise])
-
       wardsDataRef.current = dataSource
       viewer.dataSources.add(dataSource)
 
-      for (let index = 0; index < dataSource.entities.values.length; index++) {
-        const entity = dataSource.entities.values[index]
+      // setStatus("Coloring wards by temperature...")
+
+      // 3. Apply colors based on baseline data
+      for (let entity of dataSource.entities.values) {
         if (!entity.polygon) continue
 
-        try {
-          const positions = entity.polygon.hierarchy.getValue(Cesium.JulianDate.now()).positions
-          const center = Cesium.BoundingSphere.fromPoints(positions).center
-          const cartographic = Cesium.Cartographic.fromCartesian(center)
-          const lon = Cesium.Math.toDegrees(cartographic.longitude)
-          const lat = Cesium.Math.toDegrees(cartographic.latitude)
+        // Extract ward number from KML data
+        const wardNum = entity.kml?.extendedData?.id?.value ||
+          entity.kml?.extendedData?.WARD_NO?.value ||
+          entity.name?.match(/\d+/)?.[0]
 
-          const response = await fetch('http://localhost:8000/api/uhi/predict', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              ndvi: 0.3,
-              lon: lon,
-              lat: lat,
-              green_cover_increase: 0
-            })
-          })
+        if (wardNum && baselines[wardNum]) {
+          const stats = baselines[wardNum]
 
-          if (!response.ok) throw new Error('API call failed')
-
-          const prediction = await response.json()
-          const lst_current = prediction.lst_before
-
+          // Color coding by temperature
           let color: any
-          if (lst_current < 35) {
-            color = Cesium.Color.fromCssColorString("#059669")
-          } else if (lst_current < 40) {
-            color = Cesium.Color.fromCssColorString("#F59E0B")
-          } else if (lst_current < 45) {
-            color = Cesium.Color.fromCssColorString("#FB923C")
+          if (stats.lst >= 45) {
+            color = Cesium.Color.fromCssColorString("#7f1d1d") // Extreme
+          } else if (stats.lst >= 40) {
+            color = Cesium.Color.fromCssColorString("#DC2626") // High
+          } else if (stats.lst >= 35) {
+            color = Cesium.Color.fromCssColorString("#F59E0B") // Moderate
           } else {
-            color = Cesium.Color.fromCssColorString("#DC2626")
+            color = Cesium.Color.fromCssColorString("#059669") // Low
           }
 
-          entity.polygon.material = new Cesium.ColorMaterialProperty(color.withAlpha(0.6))
+          entity.polygon.material = new Cesium.ColorMaterialProperty(color.withAlpha(0.5))
           entity.polygon.outline = true
           entity.polygon.outlineColor = Cesium.Color.fromCssColorString("#0A0A0A")
           entity.polygon.outlineWidth = 2
           entity.polygon.height = 0
           entity.polygon.heightReference = Cesium.HeightReference.CLAMP_TO_GROUND
 
+          // Store ward metadata
+          entity.addProperty('ward_number')
           entity.addProperty('lst_current')
           entity.addProperty('ndvi_current')
           entity.addProperty('lon')
           entity.addProperty('lat')
 
-          entity.lst_current = lst_current
-          entity.ndvi_current = prediction.ndvi_before
-          entity.lon = lon
-          entity.lat = lat
+          entity.ward_number = parseInt(wardNum)
+          entity.lst_current = stats.lst
+          entity.ndvi_current = stats.ndvi
+          entity.lon = stats.lon
+          entity.lat = stats.lat
 
-          const wardName = entity.name || `Ward ${index + 1}`
-          const riskLevel = lst_current >= 45 ? "Extreme" :
-            lst_current >= 40 ? "High" :
-              lst_current >= 35 ? "Moderate" : "Low"
+          const wardName = entity.name || `Ward ${wardNum}`
+          const riskLevel = stats.lst >= 45 ? "Extreme" :
+            stats.lst >= 40 ? "High" :
+              stats.lst >= 35 ? "Moderate" : "Low"
 
           entity.description = `
             <div style="font-family: sans-serif; padding: 10px;">
               <h3 style="margin-bottom: 10px; color: #059669;">${wardName}</h3>
               <table>
-                <tr><td><strong>Current LST:</strong></td><td>${lst_current.toFixed(2)}°C</td></tr>
-                <tr><td><strong>Risk Level:</strong></td><td style="color: ${lst_current >= 40 ? '#DC2626' : lst_current >= 35 ? '#F59E0B' : '#059669'};">${riskLevel}</td></tr>
-                <tr><td><strong>NDVI:</strong></td><td>${prediction.ndvi_before.toFixed(3)}</td></tr>
-                <tr><td><strong>Coordinates:</strong></td><td>${lat.toFixed(4)}, ${lon.toFixed(4)}</td></tr>
+                <tr><td><strong>Ward Number:</strong></td><td>#${wardNum}</td></tr>
+                <tr><td><strong>Current LST:</strong></td><td>${stats.lst.toFixed(2)}°C</td></tr>
+                <tr><td><strong>Risk Level:</strong></td><td style="color: ${stats.lst >= 40 ? '#DC2626' : stats.lst >= 35 ? '#F59E0B' : '#059669'};">${riskLevel}</td></tr>
+                <tr><td><strong>NDVI:</strong></td><td>${stats.ndvi.toFixed(3)}</td></tr>
+                <tr><td><strong>Coordinates:</strong></td><td>${stats.lat.toFixed(4)}, ${stats.lon.toFixed(4)}</td></tr>
               </table>
               <p style="margin-top: 10px; font-size: 12px; color: #666;">
-                Click this ward to simulate green cover intervention
+                Click to view detailed ward information
               </p>
             </div>
           `
-
-          console.log(`Ward ${index + 1}: ${wardName} - LST: ${lst_current.toFixed(2)}°C`)
-
-        } catch (err) {
-          console.error(`Failed to fetch data for ward ${index}:`, err)
         }
       }
 
-      console.log(`Loaded real LST data for ${dataSource.entities.values.length} wards`)
+      console.log(`Loaded and colored ${dataSource.entities.values.length} wards`)
     }
 
     const createFallbackVisualization = (viewer: any, Cesium: any) => {
@@ -358,8 +401,6 @@ export function Visualization3D({ onWardSelect }: Visualization3DProps) {
           `
         })
       })
-
-      setError("Using sample visualization. Upload bengaluru_wards.kml for full data.")
     }
 
     initCesium()
@@ -461,20 +502,26 @@ export function Visualization3D({ onWardSelect }: Visualization3DProps) {
     setStatus("Loading UHI predictions...")
 
     try {
-      const response = await fetch('http://localhost:8000/api/uhi/sample-data')
+      const response = await fetch('http://localhost:8000/api/uhi/all-ward-baselines')
       const result = await response.json()
+
+      const dataArray = Object.entries(result).map(([id, val]: any) => ({
+        ward_number: id,
+        ...val,
+        cooling: 0 // Baseline has 0 cooling
+      }))
 
       console.log("UHI Summary:", result.summary)
 
-      setUhiData(result.data)
-      await visualizeUHIPredictions(result.data)
+      setUhiData(dataArray)
+      await visualizeUHIPredictions(dataArray)
       setShowUHILayer(true)
 
       setStatus(`Loaded ${result.returned_points} UHI predictions`)
 
     } catch (err) {
       console.error("Failed to load UHI predictions:", err)
-      setError("Failed to load UHI predictions. Is the backend running on port 8000?")
+      setError("Failed to load UHI predictions. Is the backend running?")
     } finally {
       setUhiLoading(false)
     }
@@ -515,7 +562,6 @@ export function Visualization3D({ onWardSelect }: Visualization3DProps) {
         description: `
         <div style="font-family: sans-serif; padding: 12px; max-width: 300px;">
           <h3 style="margin: 0 0 12px 0; color: #059669; display: flex; align-items: center; gap: 8px;">
-            <span style="font-size: 20px;">🌳</span>
             Green Cover Impact
           </h3>
           
@@ -651,7 +697,7 @@ export function Visualization3D({ onWardSelect }: Visualization3DProps) {
             </div>
           </div>
 
-          <div className="grid grid-cols-4 gap-2">
+          <div className="grid grid-cols-2 gap-2">
             <Button
               variant={layers.buildings ? "default" : "outline"}
               size="sm"
@@ -672,43 +718,11 @@ export function Visualization3D({ onWardSelect }: Visualization3DProps) {
               Heat Map
             </Button>
 
-            <Button
-              variant={showUHILayer ? "default" : "outline"}
-              size="sm"
-              onClick={toggleUHILayer}
-              className={`gap-2 ${showUHILayer ? 'bg-emerald-600 hover:bg-emerald-700' : ''}`}
-              disabled={uhiLoading}
-            >
-              <Thermometer className="h-4 w-4" />
-              {uhiLoading ? "Loading..." : "UHI Impact"}
-            </Button>
-
-            <Button
-              variant={layers.greenCover ? "default" : "outline"}
-              size="sm"
-              onClick={() => toggleLayer("greenCover")}
-              className="gap-2"
-              disabled
-            >
-              <Trees className="h-4 w-4" />
-              Green Cover
-            </Button>
           </div>
 
           <div className="pt-2 border-t border-border">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-xs font-medium text-muted-foreground">Heat Intensity Scale:</p>
-            </div>
-            <div className="space-y-2">
-              <div className="h-2 rounded-full bg-linear-to-r from-emerald-500 via-amber-500 to-red-600"></div>
-              <div className="flex justify-between text-xs text-muted-foreground">
-                <span>Low</span>
-                <span>Moderate</span>
-                <span>High</span>
-              </div>
-            </div>
             <p className="text-xs text-muted-foreground mt-2">
-              Click any zone to view detailed heat island metrics
+              Click any ward to view detailed metrics and simulate interventions
             </p>
           </div>
         </div>

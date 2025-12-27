@@ -5,8 +5,8 @@ import { Card } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Slider } from "@/components/ui/slider"
-import { Sparkles, ChevronRight, Check } from "lucide-react"
-import { useState } from "react"
+import { Sparkles, ChevronRight, Check, Loader2 } from "lucide-react"
+import { useState, useEffect } from "react"
 
 interface PolicySimulationEngineProps {
   onSimulate: (data: any) => void
@@ -14,34 +14,46 @@ interface PolicySimulationEngineProps {
 
 export function PolicySimulationEngine({ onSimulate }: PolicySimulationEngineProps) {
   const [currentStep, setCurrentStep] = useState(1)
-  const [area, setArea] = useState("")
+  const [wardId, setWardId] = useState("")
   const [intervention, setIntervention] = useState("")
   const [intensity, setIntensity] = useState([50])
-  const [isSimulating, setIsSimulating] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [wards, setWards] = useState<{ id: number; name: string }[]>([])
   const [areaData, setAreaData] = useState<any>(null)
+  const [simulationResult, setSimulationResult] = useState<any>(null)
 
   const steps = [
-    { id: 1, name: "Select Area" },
+    { id: 1, name: "Select Ward" },
     { id: 2, name: "Choose Intervention" },
     { id: 3, name: "Configure Intensity" },
-    { id: 4, name: "Simulate Impact" },
-    { id: 5, name: "Review Outcomes" },
+    { id: 4, name: "Review & Simulate" },
+    { id: 5, name: "Results" },
   ]
 
-  // Area coordinates with baseline NDVI for these areas (to give policy selection option)
-  const areas: Record<string, { lon: number, lat: number, baseline_ndvi: number }> = {
-    koramangala: { lon: 77.6269, lat: 12.9279, baseline_ndvi: 0.35 },
-    whitefield: { lon: 77.7499, lat: 12.9698, baseline_ndvi: 0.25 },
-    indiranagar: { lon: 77.6408, lat: 12.9716, baseline_ndvi: 0.30 },
-    jayanagar: { lon: 77.5833, lat: 12.9250, baseline_ndvi: 0.40 },
-    malleshwaram: { lon: 77.5703, lat: 13.0034, baseline_ndvi: 0.38 },
+  // Load all wards from DB on mount
+  useEffect(() => {
+    fetch('http://localhost:8000/api/uhi/wards-metadata')
+      .then(res => res.json())
+      .then(setWards)
+      .catch(console.error)
+  }, [])
+
+  // Fetch baseline data when ward is selected
+  const fetchWardBaseline = async (wId: string) => {
+    try {
+      const response = await fetch(`http://localhost:8000/api/uhi/ward-baseline/${wId}`)
+      const data = await response.json()
+      setAreaData(data)
+    } catch (err) {
+      console.error("Failed to fetch ward baseline:", err)
+    }
   }
 
   const handleNext = async () => {
     if (currentStep < 4) {
-      // Fetch baseline data when area is selected
-      if (currentStep === 1 && area) {
-        await fetchAreaBaseline(area)
+      // Fetch baseline when ward is selected
+      if (currentStep === 1 && wardId && !areaData) {
+        await fetchWardBaseline(wardId)
       }
       setCurrentStep(currentStep + 1)
     } else if (currentStep === 4) {
@@ -49,115 +61,83 @@ export function PolicySimulationEngine({ onSimulate }: PolicySimulationEnginePro
     }
   }
 
-  const fetchAreaBaseline = async (areaName: string) => {
-    const coords = areas[areaName]
-    if (!coords) return
-
-    try {
-      const response = await fetch('http://localhost:8000/api/uhi/predict', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ndvi: coords.baseline_ndvi,
-          lon: coords.lon,
-          lat: coords.lat,
-          green_cover_increase: 0 // current state (initial)
-        })
-      })
-
-      const data = await response.json()
-      setAreaData(data)
-      //console.log(`Baseline for ${areaName}:`, data)
-    } catch (err) {
-      console.error("Failed to fetch baseline:", err)
-    }
-  }
-
   const runSimulation = async () => {
-    setIsSimulating(true)
+    setLoading(true)
 
     try {
-      const coords = areas[area]
-
       // Calculate NDVI increase based on intervention and intensity
       let ndviIncrease = 0
       if (intervention === "green") {
-        // Green infrastructure: direct NDVI increase
-        ndviIncrease = (intensity[0] / 100) * 0.3 // Max 0.3 NDVI increase at 100%
+        ndviIncrease = (intensity[0] / 100) * 0.3 // Max 0.3 NDVI increase
       } else if (intervention === "cooling") {
-        // Cooling corridors: moderate NDVI increase + albedo effect
-        ndviIncrease = (intensity[0] / 100) * 0.2
+        ndviIncrease = (intensity[0] / 100) * 0.2 // Moderate increase + albedo
       } else if (intervention === "materials") {
-        // Sustainable materials: small indirect greening effect
-        ndviIncrease = (intensity[0] / 100) * 0.1
+        ndviIncrease = (intensity[0] / 100) * 0.1 // Small indirect effect
       }
 
-      // Call api with params
-      const response = await fetch('http://localhost:8000/api/uhi/predict', {
+      const res = await fetch('http://localhost:8000/api/uhi/simulate-ward', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          ndvi: coords.baseline_ndvi,
-          lon: coords.lon,
-          lat: coords.lat,
-          green_cover_increase: ndviIncrease
+          ward_id: parseInt(wardId),
+          intensity: ndviIncrease
         })
       })
 
-      const prediction = await response.json()
+      const prediction = await res.json()
 
-      // Calculate CO2 sequestration 
-      // Based on: 1 hectare of urban trees sequesters ~2.5 tons CO2/year
-      const areaHectares = 100 // Assume 100 hectares per neighborhood
+      // Calculate CO2 sequestration
+      const areaSqKm = areaData?.area_sqkm || 1;
+      const areaHectares = areaSqKm * 100;
       const ndviGain = prediction.ndvi_after - prediction.ndvi_before
-      const co2Offset = (ndviGain * areaHectares * 2.5 * 10).toFixed(0) // tons/year
+      const co2Offset = Math.max(0, ndviGain) * areaHectares * 25;
+      const treeEquivalent = Math.round(co2Offset / 0.022);
+      const carEquivalent = Math.round(co2Offset / 4.6);
 
       const result = {
-        area,
+        wardId,
+        wardName: wards.find(w => w.id === parseInt(wardId))?.name,
         intervention,
         intensity: intensity[0],
-        // data from api (prediction)
         temperatureReduction: prediction.cooling_effect,
+        area_sqkm: areaSqKm,
         lstBefore: prediction.lst_before,
         lstAfter: prediction.lst_after,
         ndviBefore: prediction.ndvi_before,
         ndviAfter: prediction.ndvi_after,
         riskReduction: prediction.risk_reduction,
-        co2Offset: parseFloat(co2Offset),
-        // Metadata
-        coordinates: { lon: coords.lon, lat: coords.lat }
+        co2Offset: parseFloat(co2Offset.toFixed(0)),
+        treeEquivalent: treeEquivalent,
+        carEquivalent: carEquivalent
       }
 
-      console.log("Simulation Result:", result)
-
-      onSimulate(result)
-      setCurrentStep(5)
-
+      setSimulationResult(result);
+      onSimulate(result);
+      setCurrentStep(5);
     } catch (err) {
       console.error("Simulation failed:", err)
-      alert("Simulation failed. Is the backend running?")
+      alert("Simulation failed. Check backend connection.")
     } finally {
-      setIsSimulating(false)
+      setLoading(false)
     }
   }
 
   const handleReset = () => {
     setCurrentStep(1)
-    setArea("")
+    setWardId("")
     setIntervention("")
     setIntensity([50])
     setAreaData(null)
   }
 
   const canProceed = () => {
-    if (currentStep === 1) return area !== ""
+    if (currentStep === 1) return wardId !== ""
     if (currentStep === 2) return intervention !== ""
     return true
   }
 
-
   return (
-    <Card className="p-6 bg-card/50 backdrop-blur-sm">
+    <Card className="p-6 bg-card/50 backdrop-blur-sm border-primary/20">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h3 className="text-2xl font-bold mb-1">Policy Simulation Engine</h3>
@@ -195,7 +175,8 @@ export function PolicySimulationEngine({ onSimulate }: PolicySimulationEnginePro
               </div>
               {index < steps.length - 1 && (
                 <div
-                  className={`w-12 h-0.5 mb-6 mx-1 ${currentStep > step.id ? "bg-primary" : "bg-muted-foreground/30"}`}
+                  className={`w-12 h-0.5 mb-6 mx-1 ${currentStep > step.id ? "bg-primary" : "bg-muted-foreground/30"
+                    }`}
                 />
               )}
             </div>
@@ -208,25 +189,28 @@ export function PolicySimulationEngine({ onSimulate }: PolicySimulationEnginePro
         {currentStep === 1 && (
           <div className="space-y-4">
             <div>
-              <Label htmlFor="area">Target Area</Label>
-              <Select value={area} onValueChange={setArea}>
-                <SelectTrigger id="area" className="mt-2">
-                  <SelectValue placeholder="Choose a district" />
+              <Label htmlFor="ward">Select Ward</Label>
+              <Select value={wardId} onValueChange={(val) => { setWardId(val); fetchWardBaseline(val); }}>
+                <SelectTrigger id="ward" className="mt-2">
+                  <SelectValue placeholder={wards.length ? "Choose from 225 wards..." : "Loading wards..."} />
                 </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="koramangala">Koramangala</SelectItem>
-                  <SelectItem value="whitefield">Whitefield</SelectItem>
-                  <SelectItem value="indiranagar">Indiranagar</SelectItem>
-                  <SelectItem value="jayanagar">Jayanagar</SelectItem>
-                  <SelectItem value="malleshwaram">Malleshwaram</SelectItem>
+                <SelectContent className="max-h-72">
+                  {wards.map(w => (
+                    <SelectItem key={w.id} value={w.id.toString()}>
+                      {w.name} (Ward {w.id})
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
             {areaData && (
               <div className="p-3 bg-muted/50 rounded-lg text-sm">
                 <p className="font-semibold mb-1">Baseline Data:</p>
-                <p>Current Temperature: {areaData.lst_before.toFixed(2)}°C</p>
-                <p>Risk Level: {areaData.risk_reduction.split(' → ')[0]}</p>
+                <p>Current Temperature: {areaData.lst_before?.toFixed(2)}°C</p>
+                <p>Current NDVI: {areaData.ndvi_before?.toFixed(3)}</p>
+                {areaData.risk_reduction && (
+                  <p>Risk Level: {areaData.risk_reduction.split(' → ')[0]}</p>
+                )}
               </div>
             )}
           </div>
@@ -248,7 +232,7 @@ export function PolicySimulationEngine({ onSimulate }: PolicySimulationEnginePro
               </Select>
             </div>
             <p className="text-sm text-muted-foreground">
-              Choose the policy intervention to model on the selected area.
+              Choose the policy intervention to model on the selected ward.
             </p>
           </div>
         )}
@@ -263,7 +247,7 @@ export function PolicySimulationEngine({ onSimulate }: PolicySimulationEnginePro
                 onValueChange={setIntensity}
                 min={0}
                 max={100}
-                step={10}
+                step={5}
                 className="mt-4"
               />
               <div className="flex justify-between text-xs text-muted-foreground mt-2">
@@ -271,8 +255,8 @@ export function PolicySimulationEngine({ onSimulate }: PolicySimulationEnginePro
                 <span>Full Scale</span>
               </div>
             </div>
-            <p className="text-sm text-muted-foreground">
-              Define the scale of implementation from pilot (20%) to full deployment (100%).
+            <p className="text-xs text-muted-foreground italic">
+              Mapping {intensity[0]}% effort to +{((intensity[0] / 100) * (intervention === "green" ? 0.3 : intervention === "cooling" ? 0.2 : 0.1)).toFixed(2)} NDVI increase.
             </p>
           </div>
         )}
@@ -281,8 +265,16 @@ export function PolicySimulationEngine({ onSimulate }: PolicySimulationEnginePro
           <div className="space-y-4">
             <div className="bg-muted/50 rounded-lg p-4 space-y-3">
               <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">Area</span>
-                <span className="font-semibold capitalize">{area}</span>
+                <span className="text-sm text-muted-foreground">Ward</span>
+                <span className="font-semibold">
+                  {wards.find(w => w.id === parseInt(wardId))?.name} (#{wardId})
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">Physical Area</span>
+                <span className="font-semibold text-emerald-500">
+                  {areaData?.area_sqkm ? `${areaData.area_sqkm.toFixed(2)} km²` : "N/A"}
+                </span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-sm text-muted-foreground">Intervention</span>
@@ -292,36 +284,58 @@ export function PolicySimulationEngine({ onSimulate }: PolicySimulationEnginePro
                   {intervention === "materials" && "Sustainable Materials"}
                 </span>
               </div>
+              <div className="flex justify-between items-center border-t border-border/50 pt-2 mt-2">
+                <span className="text-sm text-muted-foreground">Baseline LST / NDVI</span>
+                <span className="font-semibold text-sm">
+                  {areaData?.lst_before?.toFixed(1)}°C / {areaData?.ndvi_before?.toFixed(3)}
+                </span>
+              </div>
               <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">Intensity</span>
+                <span className="text-sm text-muted-foreground">Simulation Intensity</span>
                 <span className="font-semibold">{intensity[0]}%</span>
               </div>
-              {areaData && (
-                <>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-muted-foreground">Baseline LST</span>
-                    <span className="font-semibold">{areaData.lst_before.toFixed(2)}°C</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-muted-foreground">Baseline NDVI</span>
-                    <span className="font-semibold">{areaData.ndvi_before.toFixed(3)}</span>
-                  </div>
-                </>
-              )}
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">Target NDVI Gain</span>
+                <span className="font-medium text-emerald-500">
+                  +{((intensity[0] / 100) * (intervention === "green" ? 0.3 : intervention === "cooling" ? 0.2 : 0.1)).toFixed(2)}
+                </span>
+              </div>
             </div>
+            <p className="text-[10px] text-muted-foreground text-center italic">
+              Sequestration will be calculated across {(areaData?.area_sqkm * 100).toFixed(0)} hectares.
+            </p>
           </div>
         )}
 
-        {currentStep === 5 && (
-          <div className="space-y-4">
-            <div className="bg-primary/10 border border-primary/30 rounded-lg p-4">
-              <p className="text-sm font-semibold text-primary mb-2">Simulation Complete</p>
-              <p className="text-sm text-muted-foreground">
-                The predicted outcomes are now visible in the map and metrics panels. Review the baseline vs simulated
-                comparison to assess policy impact.
+        {currentStep === 5 && simulationResult && (
+          <div className="space-y-4 animate-in fade-in zoom-in duration-300">
+            <div className="flex flex-col items-center justify-center p-6 bg-primary/5 rounded-2xl border border-primary/20">
+              <Check className="h-10 w-10 text-primary mb-2" />
+              <p className="font-bold text-primary text-center">Impact Modeled Successfully</p>
+              <p className="text-xs text-muted-foreground text-center mb-4">
+                Results for {simulationResult.wardName}
               </p>
+
+              <div className="grid grid-cols-2 gap-3 w-full">
+                <div className="bg-background/50 p-3 rounded-lg border border-emerald-500/20">
+                  <p className="text-[10px] uppercase text-muted-foreground font-bold mb-1">Nature Impact</p>
+                  <p className="text-lg font-black text-emerald-500">
+                    ~{simulationResult.treeEquivalent.toLocaleString()}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground">Mature Trees</p>
+                </div>
+
+                <div className="bg-background/50 p-3 rounded-lg border border-blue-500/20">
+                  <p className="text-[10px] uppercase text-muted-foreground font-bold mb-1">Carbon Offset</p>
+                  <p className="text-lg font-black text-blue-500">
+                    ~{simulationResult.carEquivalent.toLocaleString()}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground">Cars/yr removed</p>
+                </div>
+              </div>
             </div>
-            <Button onClick={handleReset} variant="outline" className="w-full bg-transparent">
+
+            <Button onClick={handleReset} variant="outline" className="w-full">
               Run New Simulation
             </Button>
           </div>
@@ -336,9 +350,12 @@ export function PolicySimulationEngine({ onSimulate }: PolicySimulationEnginePro
               Back
             </Button>
           )}
-          <Button onClick={handleNext} disabled={!canProceed() || isSimulating} className="flex-1">
-            {isSimulating ? (
-              <>Running simulation...</>
+          <Button onClick={handleNext} disabled={!canProceed() || loading} className="flex-1">
+            {loading ? (
+              <>
+                <Loader2 className="animate-spin mr-2 h-4 w-4" />
+                Running simulation...
+              </>
             ) : currentStep === 4 ? (
               <>
                 <Sparkles className="mr-2 h-4 w-4" />
