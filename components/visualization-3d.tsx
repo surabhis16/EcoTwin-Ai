@@ -3,7 +3,7 @@
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Globe, Layers, Building2, Trees, MapPin, AlertCircle, Maximize2, Minimize2, Thermometer } from "lucide-react"
+import { Globe, Layers, Building2, MapPin, AlertCircle, Maximize2, Minimize2 } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 
 interface LayerState {
@@ -16,16 +16,33 @@ interface Visualization3DProps {
   onWardSelect?: (wardData: any) => void
 }
 
-// Storing the viewer ref globally for external access
+// global viewer reference for external access
 let globalViewerRef: any = null
 
+let materialEntitiesRef: any[] = []
+
 export const updateUHIForSimulation = async (simulationData: any) => {
-  if (!globalViewerRef) return
+  if (!globalViewerRef) {
+    console.warn("Viewer not ready yet");
+    return;
+  }
 
-  const Cesium = await import("cesium")
-  const { lon, lat } = simulationData.coordinates || { lon: 77.5946, lat: 12.9716 }
+  const Cesium = await import("cesium");
+  const { lon, lat } = simulationData.coordinates || { lon: 77.5946, lat: 12.9716 };
 
-  // Create highlighted marker showing the simulated area
+  console.log("Updating map with simulation:", simulationData);
+
+  // clear previous visualizations
+  materialEntitiesRef.forEach(entity => {
+    try {
+      globalViewerRef.entities.remove(entity);
+    } catch (e) {
+      // entity already removed
+    }
+  });
+  materialEntitiesRef = [];
+
+  // main simulation area (cyan circle)
   const simulationMarker = globalViewerRef.entities.add({
     position: Cesium.Cartesian3.fromDegrees(lon, lat),
     ellipse: {
@@ -34,62 +51,154 @@ export const updateUHIForSimulation = async (simulationData: any) => {
       material: Cesium.Color.CYAN.withAlpha(0.3),
       outline: true,
       outlineColor: Cesium.Color.CYAN,
+      outlineWidth: 2,
       heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
     },
-    description: `
-      <div style="font-family: sans-serif; padding: 16px; max-width: 320px;">
-        <h3 style="color: #059669; margin: 0 0 12px 0; font-size: 18px; display: flex; align-items: center; gap: 8px;">
-          ${simulationData.wardName || simulationData.area || 'Simulation Result'}
-        </h3>
-        
-        <div style="background: #f0fdf4; padding: 12px; border-radius: 8px; margin-bottom: 12px;">
-          <div style="font-size: 28px; font-weight: bold; color: #059669; text-align: center;">
-            ${simulationData.temperatureReduction?.toFixed(2) || '0.00'}°C
-          </div>
-          <div style="text-align: center; font-size: 12px; color: #666; margin-top: 4px;">
-            Temperature Reduction
-          </div>
-        </div>
-        
-        <table style="width: 100%; font-size: 13px; border-collapse: collapse;">
-          <tr">
-            <td style="padding: 8px 0; color: #666;">Baseline LST:</td>
-            <td style="padding: 8px 0; font-weight: 600; text-align: right;">${simulationData.lstBefore?.toFixed(2) || '0.00'}°C</td>
-          </tr>
-          <tr">
-            <td style="padding: 8px 0; color: #666;">Projected LST:</td>
-            <td style="padding: 8px 0; font-weight: 600; text-align: right; color: #059669;">${simulationData.lstAfter?.toFixed(2) || '0.00'}°C</td>
-          </tr>
-          <tr">
-            <td style="padding: 8px 0; color: #666;">NDVI Change:</td>
-            <td style="padding: 8px 0; font-weight: 600; text-align: right;">${simulationData.ndviBefore?.toFixed(3) || '0.000'} → ${simulationData.ndviAfter?.toFixed(3) || '0.000'}</td>
-          </tr>
-          <tr">
-            <td style="padding: 8px 0; color: #666;">Risk Status:</td>
-            <td style="padding: 8px 0; font-weight: 600; text-align: right;">
-              <span style="color: ${simulationData.risk_before === 'High' || simulationData.risk_before === 'Extreme' ? '#DC2626' : '#F59E0B'};">${simulationData.risk_before || 'Unknown'}</span>
-              →
-              <span style="color: ${simulationData.risk_after === 'Low' ? '#059669' : '#F59E0B'};">${simulationData.risk_after || 'Unknown'}</span>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding: 8px 0; color: #666;">CO₂ Offset:</td>
-            <td style="padding: 8px 0; font-weight: 600; text-align: right; color: #3B82F6;">${simulationData.co2Offset || 0} t/y</td>
-          </tr>
-        </table>
-        
-        <div style="margin-top: 12px; padding: 10px; background: #a9a9a9; border-radius: 6px; font-size: 12px;">
-          <strong>Intervention:</strong> ${simulationData.intervention || 'N/A'} @ ${simulationData.intensity || 0}% intensity
-        </div>
-      </div>
-    `
-  })
+    description: buildDescription(simulationData)
+  });
+  materialEntitiesRef.push(simulationMarker);
 
-  // Fly to the simulated area
+  // if material was selected, add material-specific visualization
+  if (simulationData.selectedMaterial) {
+    const material = simulationData.selectedMaterial;
+
+    console.log("Adding material visualization:", material.name);
+
+    // purple circle for material application zone
+    const materialCoverage = globalViewerRef.entities.add({
+      position: Cesium.Cartesian3.fromDegrees(lon, lat),
+      ellipse: {
+        semiMinorAxis: 1500,
+        semiMajorAxis: 1500,
+        material: Cesium.Color.PURPLE.withAlpha(0.25),
+        outline: true,
+        outlineColor: Cesium.Color.PURPLE,
+        outlineWidth: 3,
+        heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+      },
+    });
+    materialEntitiesRef.push(materialCoverage);
+
+    // material label floating above
+    const materialLabel = globalViewerRef.entities.add({
+      position: Cesium.Cartesian3.fromDegrees(lon, lat, 100),
+      label: {
+        text: `${material.name}`,
+        font: 'bold 16px sans-serif',
+        fillColor: Cesium.Color.WHITE,
+        backgroundColor: Cesium.Color.PURPLE.withAlpha(0.9),
+        backgroundPadding: new Cesium.Cartesian2(10, 6),
+        style: Cesium.LabelStyle.FILL,
+        verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+        pixelOffset: new Cesium.Cartesian2(0, -30),
+        heightReference: Cesium.HeightReference.RELATIVE_TO_GROUND,
+        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+      },
+    });
+    materialEntitiesRef.push(materialLabel);
+
+    // add a point marker at the center
+    const centerPoint = globalViewerRef.entities.add({
+      position: Cesium.Cartesian3.fromDegrees(lon, lat, 50),
+      point: {
+        pixelSize: 12,
+        color: Cesium.Color.PURPLE,
+        outlineColor: Cesium.Color.WHITE,
+        outlineWidth: 3,
+        heightReference: Cesium.HeightReference.RELATIVE_TO_GROUND,
+      },
+    });
+    materialEntitiesRef.push(centerPoint);
+  }
+
+  // fly to the location
   globalViewerRef.camera.flyTo({
     destination: Cesium.Cartesian3.fromDegrees(lon, lat, 8000),
     duration: 2,
+  });
+};
+
+function buildDescription(simulationData: any): string {
+  const hasMaterial = !!simulationData.selectedMaterial;
+  const material = simulationData.selectedMaterial;
+
+  const materialSection = hasMaterial ? `
+    <div style="background: #f3e8ff; padding: 12px; border-radius: 8px; margin-top: 12px; border-left: 4px solid #8B5CF6;">
+      <h4 style="margin: 0 0 8px 0; font-size: 14px; color: #8B5CF6; display: flex; align-items: center; gap: 6px;">
+        Applied Material
+      </h4>
+      <table style="width: 100%; font-size: 12px;">
+        <tr>
+          <td style="padding: 4px 0; color: #666;">Material:</td>
+          <td style="padding: 4px 0; font-weight: 600; color: #000000;">${material.name}</td>
+        </tr>
+        <tr>
+          <td style="padding: 4px 0; color: #666;">Type:</td>
+          <td style="padding: 4px 0; font-weight: 600; color: #000000;">${material.type}</td>
+        </tr>
+        <tr>
+          <td style="padding: 4px 0; color: #666;">Cooling Boost:</td>
+          <td style="padding: 4px 0; font-weight: 600; color: #059669;">+${material.tempReduction.toFixed(2)}°C</td>
+        </tr>
+        <tr>
+          <td style="padding: 4px 0; color: #666;">CO₂ Offset:</td>
+          <td style="padding: 4px 0; font-weight: 600; color: #3B82F6;">+${material.co2Reduction.toFixed(0)} kg/yr</td>
+        </tr>
+        <tr>
+          <td style="padding: 4px 0; color: #666;">Cooling Index:</td>
+          <td style="padding: 4px 0; font-weight: 600; color: #000000;">${(material.coolingIndex * 10).toFixed(1)}/10</td>
+        </tr>
+      </table>
+    </div>
+  ` : '';
+
+  return `
+    <div style="font-family: sans-serif; padding: 16px; max-width: 340px;">
+      <h3 style="color: #059669; margin: 0 0 12px 0; font-size: 18px;">
+        ${simulationData.wardName || simulationData.area || 'Material Applied'}
+      </h3>
+      
+      ${hasMaterial ? `
+        <div style="background: #f0fdf4; padding: 12px; border-radius: 8px; margin-bottom: 12px;">
+          <div style="font-size: 28px; font-weight: bold; color: #8B5CF6; text-align: center;">
+            ${simulationData.temperatureReduction?.toFixed(2) || '0.00'}°C
+          </div>
+          <div style="text-align: center; font-size: 12px; color: #666; margin-top: 4px;">
+            Temperature Reduction from Material
+          </div>
+        </div>
+      ` : ''}
+      
+      <table style="width: 100%; font-size: 13px; border-collapse: collapse;">
+        ${simulationData.lstBefore ? `
+          <tr style="border-bottom: 1px solid #e5e7eb;">
+            <td style="padding: 8px 0; color: #666;">Baseline LST:</td>
+            <td style="padding: 8px 0; font-weight: 600; text-align: right;">${simulationData.lstBefore.toFixed(2)}°C</td>
+          </tr>
+          <tr style="border-bottom: 1px solid #e5e7eb;">
+            <td style="padding: 8px 0; color: #666;">Projected LST:</td>
+            <td style="padding: 8px 0; font-weight: 600; text-align: right; color: #059669;">${simulationData.lstAfter.toFixed(2)}°C</td>
+          </tr>
+        ` : ''}
+        <tr>
+          <td style="padding: 8px 0; color: #666;">CO₂ Offset:</td>
+          <td style="padding: 8px 0; font-weight: 600; text-align: right; color: #3B82F6;">${simulationData.co2Offset || 0} t/y</td>
+        </tr>
+      </table>
+      
+      ${materialSection}
+    </div>
+  `;
+}
+
+
+export const clearMaterialVisualizations = () => {
+  if (!globalViewerRef) return
+
+  materialEntitiesRef.forEach(entity => {
+    globalViewerRef.entities.remove(entity)
   })
+  materialEntitiesRef = []
 }
 
 export function Visualization3D({ onWardSelect }: Visualization3DProps) {
@@ -111,23 +220,22 @@ export function Visualization3D({ onWardSelect }: Visualization3DProps) {
   const [error, setError] = useState<string | null>(null)
   const [status, setStatus] = useState("Initializing...")
   const [isFullscreen, setIsFullscreen] = useState(false)
-  const [uhiData, setUhiData] = useState<any[]>([])
-  const [showUHILayer, setShowUHILayer] = useState(false)
-  const [uhiLoading, setUhiLoading] = useState(false)
-  const uhiEntitiesRef = useRef<any[]>([])
 
   const handleWardClick = async (entity: any) => {
     if (!entity || !entity.ward_number) return
 
     try {
-      // Fetch current ward details when clicked
       const res = await fetch('http://localhost:8000/api/uhi/simulate-ward', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ward_id: entity.ward_number, intensity: 0 })
       })
-      const data = await res.json()
 
+      if (!res.ok) {
+        throw new Error(`Failed to fetch ward data: ${res.statusText}`)
+      }
+
+      const data = await res.json()
       const Cesium = await import("cesium")
 
       // Highlight selected ward
@@ -156,17 +264,14 @@ export function Visualization3D({ onWardSelect }: Visualization3DProps) {
         name: entity.name || `Ward ${entity.ward_number}`
       }
 
-      console.log("Ward clicked:", wardData)
-
-      // Call parent callback if provided
       if (onWardSelect) {
         onWardSelect(wardData)
       }
 
-      // Update selection display
       setSelectedWard(wardData.name)
     } catch (err) {
       console.error("Failed to fetch ward data:", err)
+      setError(err instanceof Error ? err.message : "Failed to fetch ward data")
     }
   }
 
@@ -271,7 +376,6 @@ export function Visualization3D({ onWardSelect }: Visualization3DProps) {
     const loadWardsDataOptimized = async (viewer: any, Cesium: any) => {
       setStatus("Fetching all ward temperatures...")
 
-      // Fetch all ward baselines at once 
       const baselineRes = await fetch('http://localhost:8000/api/uhi/all-ward-baselines')
       if (!baselineRes.ok) throw new Error('Failed to fetch ward baselines')
 
@@ -280,7 +384,6 @@ export function Visualization3D({ onWardSelect }: Visualization3DProps) {
 
       setStatus("Loading ward boundaries...")
 
-      // Load KML with ward shapes
       const timeoutPromise = new Promise((_, reject) =>
         setTimeout(() => reject(new Error("KML loading timeout (30s)")), 30000)
       )
@@ -295,13 +398,9 @@ export function Visualization3D({ onWardSelect }: Visualization3DProps) {
       wardsDataRef.current = dataSource
       viewer.dataSources.add(dataSource)
 
-      // setStatus("Coloring wards by temperature...")
-
-      // 3. Apply colors based on baseline data
       for (let entity of dataSource.entities.values) {
         if (!entity.polygon) continue
 
-        // Extract ward number from KML data
         const wardNum = entity.kml?.extendedData?.id?.value ||
           entity.kml?.extendedData?.WARD_NO?.value ||
           entity.name?.match(/\d+/)?.[0]
@@ -309,16 +408,15 @@ export function Visualization3D({ onWardSelect }: Visualization3DProps) {
         if (wardNum && baselines[wardNum]) {
           const stats = baselines[wardNum]
 
-          // Color coding by temperature
           let color: any
           if (stats.lst >= 45) {
-            color = Cesium.Color.fromCssColorString("#7f1d1d") // Extreme
+            color = Cesium.Color.fromCssColorString("#7f1d1d")
           } else if (stats.lst >= 40) {
-            color = Cesium.Color.fromCssColorString("#DC2626") // High
+            color = Cesium.Color.fromCssColorString("#DC2626")
           } else if (stats.lst >= 35) {
-            color = Cesium.Color.fromCssColorString("#F59E0B") // Moderate
+            color = Cesium.Color.fromCssColorString("#F59E0B")
           } else {
-            color = Cesium.Color.fromCssColorString("#059669") // Low
+            color = Cesium.Color.fromCssColorString("#059669")
           }
 
           entity.polygon.material = new Cesium.ColorMaterialProperty(color.withAlpha(0.5))
@@ -328,7 +426,6 @@ export function Visualization3D({ onWardSelect }: Visualization3DProps) {
           entity.polygon.height = 0
           entity.polygon.heightReference = Cesium.HeightReference.CLAMP_TO_GROUND
 
-          // Store ward metadata
           entity.addProperty('ward_number')
           entity.addProperty('lst_current')
           entity.addProperty('ndvi_current')
@@ -472,6 +569,10 @@ export function Visualization3D({ onWardSelect }: Visualization3DProps) {
 
     try {
       const response = await fetch('http://localhost:8000/api/uhi/bengaluru-hotspots?threshold=40')
+      if (!response.ok) {
+        throw new Error('Failed to fetch hotspots')
+      }
+
       const result = await response.json()
 
       if (result.hotspots && result.hotspots.length > 0) {
@@ -491,124 +592,6 @@ export function Visualization3D({ onWardSelect }: Visualization3DProps) {
       viewerRef.current.camera.flyTo({
         destination: Cesium.Cartesian3.fromDegrees(77.7499, 12.9698, 8000),
         duration: 2.5,
-      })
-    }
-  }
-
-  const loadUHIPredictions = async () => {
-    if (!viewerRef.current) return
-
-    setUhiLoading(true)
-    setStatus("Loading UHI predictions...")
-
-    try {
-      const response = await fetch('http://localhost:8000/api/uhi/all-ward-baselines')
-      const result = await response.json()
-
-      const dataArray = Object.entries(result).map(([id, val]: any) => ({
-        ward_number: id,
-        ...val,
-        cooling: 0 // Baseline has 0 cooling
-      }))
-
-      console.log("UHI Summary:", result.summary)
-
-      setUhiData(dataArray)
-      await visualizeUHIPredictions(dataArray)
-      setShowUHILayer(true)
-
-      setStatus(`Loaded ${result.returned_points} UHI predictions`)
-
-    } catch (err) {
-      console.error("Failed to load UHI predictions:", err)
-      setError("Failed to load UHI predictions. Is the backend running?")
-    } finally {
-      setUhiLoading(false)
-    }
-  }
-
-  const visualizeUHIPredictions = async (predictions: any[]) => {
-    if (!viewerRef.current) return
-
-    const Cesium = await import("cesium")
-
-    uhiEntitiesRef.current.forEach(entity => {
-      viewerRef.current.entities.remove(entity)
-    })
-    uhiEntitiesRef.current = []
-
-    predictions.forEach((pred) => {
-      let color
-      if (pred.cooling > 5) {
-        color = Cesium.Color.fromCssColorString('#059669')
-      } else if (pred.cooling > 3) {
-        color = Cesium.Color.fromCssColorString('#F59E0B')
-      } else if (pred.cooling > 1) {
-        color = Cesium.Color.fromCssColorString('#FB923C')
-      } else {
-        color = Cesium.Color.fromCssColorString('#DC2626')
-      }
-
-      const lstBefore = pred.lst_before || pred.lst
-
-      const entity = viewerRef.current.entities.add({
-        position: Cesium.Cartesian3.fromDegrees(pred.lon, pred.lat),
-        point: {
-          pixelSize: 10,
-          color: color,
-          outlineColor: Cesium.Color.WHITE,
-          outlineWidth: 2,
-        },
-        description: `
-        <div style="font-family: sans-serif; padding: 12px; max-width: 300px;">
-          <h3 style="margin: 0 0 12px 0; color: #059669; display: flex; align-items: center; gap: 8px;">
-            Green Cover Impact
-          </h3>
-          
-          <div style="background: #f0fdf4; padding: 8px; border-radius: 6px; margin-bottom: 12px;">
-            <div style="font-size: 24px; font-weight: bold; color: #059669; text-align: center;">
-              ${pred.cooling.toFixed(2)}°C
-            </div>
-            <div style="text-align: center; font-size: 12px; color: #666;">
-              Temperature Reduction
-            </div>
-          </div>
-          
-          <table style="width: 100%; font-size: 13px;">
-            <tr style="border-bottom: 1px solid #e5e7eb;">
-              <td style="padding: 6px 0; color: #666;">Current LST:</td>
-              <td style="padding: 6px 0; font-weight: 600; text-align: right;">${lstBefore.toFixed(2)}°C</td>
-            </tr>
-            <tr style="border-bottom: 1px solid #e5e7eb;">
-              <td style="padding: 6px 0; color: #666;">After Greening:</td>
-              <td style="padding: 6px 0; font-weight: 600; text-align: right; color: #059669;">${pred.lst_after.toFixed(2)}°C</td>
-            </tr>
-            <tr style="border-bottom: 1px solid #e5e7eb;">
-              <td style="padding: 6px 0; color: #666;">NDVI:</td>
-              <td style="padding: 6px 0; font-weight: 600; text-align: right;">${pred.ndvi.toFixed(3)}</td>
-            </tr>
-          </table>
-          
-          <div style="margin-top: 12px; padding: 8px; background: #fef3c7; border-radius: 6px; font-size: 12px;">
-            <strong>Scenario:</strong> 20% green cover increase
-          </div>
-        </div>
-      `
-      })
-
-      uhiEntitiesRef.current.push(entity)
-    })
-
-    console.log(`Visualized ${predictions.length} UHI predictions`)
-  }
-
-  const toggleUHILayer = () => {
-    if (!showUHILayer && uhiData.length === 0) {
-      loadUHIPredictions()
-    } else {
-      setShowUHILayer(!showUHILayer)
-      uhiEntitiesRef.current.forEach(entity => {
-        entity.show = !showUHILayer
       })
     }
   }
@@ -717,7 +700,6 @@ export function Visualization3D({ onWardSelect }: Visualization3DProps) {
               <Globe className="h-4 w-4" />
               Heat Map
             </Button>
-
           </div>
 
           <div className="pt-2 border-t border-border">

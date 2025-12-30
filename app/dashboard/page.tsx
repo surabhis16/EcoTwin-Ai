@@ -3,15 +3,14 @@
 import { DashboardNav } from "@/components/dashboard-nav"
 import { InteractiveMap } from "@/components/interactive-map"
 import { SentimentAnalysis } from "@/components/sentiment-analysis"
-import { MaterialRecommender } from "@/components/material-recommender"
-import { PolicySimulationEngine } from "@/components/policy-simulation-engine"
+import MaterialRecommender from "@/components/material-recommender"
+import PolicySimulationEngine from "@/components/policy-simulation-engine"
 import { PredictedOutcomes } from "@/components/predicted-outcomes"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import {
   SplitSquareHorizontal,
-  Sparkles,
   TrendingDown,
   Thermometer,
   MapPin,
@@ -149,10 +148,33 @@ export default function DashboardPage() {
     setSelectedWardData(wardData)
   }
 
-  const handleMaterialApplied = (material: any) => {
+  const handleMaterialApplied = (materialData: any) => {
+    console.log("Material applied:", materialData)
+
     setMaterialApplied(true)
-    setSimulationActive(true)
-    setViewMode("simulated")
+
+    // If there are ward coordinates, visualize on map
+    if (selectedWardData?.coordinates || simulationData?.coordinates) {
+      const coords = selectedWardData?.coordinates || simulationData?.coordinates
+
+      const visualizationData = {
+        ...materialData,
+        coordinates: coords,
+        wardName: selectedWardData?.ward_name || materialData.wardName,
+        lstBefore: selectedWardData?.baseline_lst || 35,
+        lstAfter: (selectedWardData?.baseline_lst || 35) - materialData.temperatureReduction,
+        ndviBefore: selectedWardData?.ndvi_before || 0.1,
+        ndviAfter: selectedWardData?.ndvi_before || 0.1,
+        risk_before: selectedWardData?.risk_before || "Unknown",
+        risk_after: "Improved",
+        baseCooling: 0,
+        materialCooling: materialData.temperatureReduction
+      }
+
+      updateUHIForSimulation(visualizationData)
+    }
+
+    // Auto-hide after 5 seconds
     setTimeout(() => setMaterialApplied(false), 5000)
   }
 
@@ -197,7 +219,7 @@ export default function DashboardPage() {
           <div className="mb-4 p-4 bg-primary/10 border border-primary/20 rounded-lg">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Sparkles className="h-5 w-5 text-primary animate-pulse" />
+                <MapPin className="h-5 w-5 text-primary animate-pulse" />
                 <div>
                   <p className="font-semibold text-primary">Simulation Active</p>
                   <p className="text-sm text-muted-foreground">
@@ -329,9 +351,7 @@ export default function DashboardPage() {
                 <Button
                   className="flex-1 bg-primary"
                   onClick={() => {
-                    // Export or save simulation results
-                    // console.log("Export simulation:", simulationData);
-                    alert("Simulation results would be exported here");
+                    // alert("Simulation results would be exported here");
                   }}
                 >
                   <ArrowRight className="h-4 w-4 mr-2" />
@@ -354,7 +374,7 @@ export default function DashboardPage() {
           />
           <SentimentAnalysis />
           <MaterialRecommender
-            selectedZone={selectedZone}
+            selectedZone={selectedWardData?.ward_name || selectedZone}
             onMaterialApplied={handleMaterialApplied}
           />
         </div>

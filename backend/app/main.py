@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import uhi_prediction
+from app.routers import uhi_prediction, material_recommendation
 
 app = FastAPI(title="EcoTwin AI API")
 
@@ -15,6 +15,8 @@ app.add_middleware(
 
 # include uhi router
 app.include_router(uhi_prediction.router)
+# include material recc router
+app.include_router(material_recommendation.router)
 
 @app.get("/")
 def read_root():
