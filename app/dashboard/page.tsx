@@ -133,6 +133,13 @@ export default function DashboardPage() {
     console.log("Cooling:", cooling, "LST Before:", lstBefore, "LST After:", lstAfter);
     console.log("NDVI Before:", ndviBefore, "NDVI After:", ndviAfter, "CO2:", co2Offset);
 
+    if (rawData.selectedMaterial) {
+      (normalized as any).selectedMaterial = rawData.selectedMaterial;
+      (normalized as any).baseCooling = rawData.baseCooling || cooling;
+      (normalized as any).materialCooling = rawData.materialCooling || 0;
+      (normalized as any).materialCO2 = rawData.materialCO2 || 0;
+    }
+
     setSimulationData(normalized);
     setSimulationActive(true);
     setViewMode("simulated");
@@ -153,7 +160,7 @@ export default function DashboardPage() {
 
     setMaterialApplied(true)
 
-    // If there are ward coordinates, visualize on map
+    // if there are ward coordinates, visualize on map
     if (selectedWardData?.coordinates || simulationData?.coordinates) {
       const coords = selectedWardData?.coordinates || simulationData?.coordinates
 
@@ -174,7 +181,6 @@ export default function DashboardPage() {
       updateUHIForSimulation(visualizationData)
     }
 
-    // Auto-hide after 5 seconds
     setTimeout(() => setMaterialApplied(false), 5000)
   }
 
