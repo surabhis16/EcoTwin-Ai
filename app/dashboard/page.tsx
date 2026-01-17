@@ -73,7 +73,6 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null)
 
   const handleSentimentZoneClick = async (wardNumber: number) => {
-    //console.log("Sentiment zone clicked:", wardNumber)
     setError(null)
 
     try {
@@ -96,7 +95,6 @@ export default function DashboardPage() {
       setSelectedWardData(wardData)
       setSelectedSentimentWard(wardNumber)
     } catch (err) {
-      //console.error("Failed to fetch ward from sentiment click:", err)
       setError(err instanceof Error ? err.message : "Failed to fetch ward data")
     }
   }
@@ -110,8 +108,6 @@ export default function DashboardPage() {
       let normalized: SimulationData;
 
       if (isFromEngine) {
-        //console.log("Using pre-computed results from Policy Engine");
-
         normalized = {
           wardId: incomingData.wardId,
           wardName: incomingData.wardName,
@@ -119,37 +115,31 @@ export default function DashboardPage() {
           intervention: incomingData.intervention,
           intensity: incomingData.intensity,
 
-          // use calculated values directly
           temperatureReduction: incomingData.temperatureReduction,
           lstBefore: incomingData.lstBefore,
-          // If engine gives lstAfter, use it. or else, calculate.
           lstAfter: incomingData.lstAfter || (incomingData.lstBefore - incomingData.temperatureReduction),
 
           baseCooling: incomingData.baseCooling || 0,
           materialCooling: incomingData.materialCooling || 0,
 
-          // NDVI
           ndviBefore: incomingData.ndviBefore,
           ndviAfter: incomingData.ndviAfter,
 
-          // Risk
           risk_before: incomingData.risk_before,
           risk_after: incomingData.risk_after,
 
-          // Carbon (policy sim engine separates Annual vs One-time)
-          co2Offset: incomingData.co2Offset, // Annual Sequestration
-          materialCO2: incomingData.materialCO2 || 0, // One-time Embodied
+          co2Offset: incomingData.co2Offset,
+          materialCO2: incomingData.materialCO2 || 0,
 
           selectedMaterial: incomingData.selectedMaterial,
           coordinates: incomingData.coordinates
         };
 
       } else {
-        // fallback simulation logic [w/o engine]
         console.log("running fallback simulation logic");
 
         const wardId = incomingData.ward_id || incomingData.wardId;
-        const defaultIntensity = 0.15; // default assumption
+        const defaultIntensity = 0.15;
 
         const simRes = await fetch('http://localhost:8000/api/uhi/simulate-ward', {
           method: 'POST',
@@ -159,7 +149,6 @@ export default function DashboardPage() {
 
         const simResult = await simRes.json();
 
-        // Basic calculations for fallback
         const cooling = simResult.cooling || 0;
         const lstB = simResult.lst_before || 35;
 
@@ -176,19 +165,17 @@ export default function DashboardPage() {
           ndviAfter: simResult.ndvi_after || 0,
           risk_before: simResult.risk_before || "Moderate",
           risk_after: simResult.risk_after || "Low",
-          co2Offset: 0, // Fallback doesn't calc complex CO2
+          co2Offset: 0,
           coordinates: simResult.coordinates
         };
       }
 
       console.log("Final Normalized Data for Dashboard:", normalized)
 
-      // Update State
       setSimulationData(normalized)
       setSelectedZone(normalized.area)
       setError(null)
 
-      // Trigger Visuals
       setTimeout(() => {
         setSimulationActive(true)
         setViewMode("simulated")
@@ -198,7 +185,6 @@ export default function DashboardPage() {
       }, 50)
 
     } catch (err) {
-      //console.error("Simulation handler failed:", err)
       setError("Failed to process simulation results")
     }
   }
@@ -230,15 +216,9 @@ export default function DashboardPage() {
       const updatedSimulation: SimulationData = {
         ...simulationData,
         selectedMaterial: materialData.selectedMaterial,
-
-        // Add material cooling to existing cooling
         temperatureReduction: simulationData.temperatureReduction + materialData.temperatureReduction,
         lstAfter: simulationData.lstAfter - materialData.temperatureReduction,
-
-        // Add material CO2 (one-time embodied) separately from annual sequestration
         materialCO2: (simulationData.materialCO2 || 0) + (materialData.co2Offset || 0),
-
-        // Track components separately
         materialCooling: materialData.temperatureReduction,
         baseCooling: simulationData.baseCooling || simulationData.temperatureReduction,
       }
@@ -248,9 +228,7 @@ export default function DashboardPage() {
       setSimulationData(updatedSimulation)
       updateUHIForSimulation(updatedSimulation)
 
-    }
-    // no active simulation => create new simulation from material only
-    else {
+    } else {
       const coords = selectedWardData?.coordinates || { lon: 77.5946, lat: 12.9716 }
 
       const newSimulation: SimulationData = {
@@ -259,29 +237,18 @@ export default function DashboardPage() {
         area: selectedWardData?.ward_name || materialData.area || "Selected Area",
         intervention: "material application",
         intensity: 100,
-
-        // Temperature (material-only, no vegetation)
         temperatureReduction: materialData.temperatureReduction,
         lstBefore: selectedWardData?.lst_before || selectedWardData?.baseline_lst || 35,
         lstAfter: (selectedWardData?.lst_before || selectedWardData?.baseline_lst || 35) - materialData.temperatureReduction,
-
-        // NDVI (no change from material alone)
         ndviBefore: selectedWardData?.ndvi_before || selectedWardData?.baseline_ndvi || 0.1,
         ndviAfter: selectedWardData?.ndvi_before || selectedWardData?.baseline_ndvi || 0.1,
-
-        // Risk
         risk_before: selectedWardData?.risk_before || "Unknown",
         risk_after: "Improved",
-
-        // CO2
-        co2Offset: 0, // No annual sequestration from materials alone
+        co2Offset: 0,
         materialCO2: materialData.co2Offset || 0,
-
-        // Material details
         selectedMaterial: materialData.selectedMaterial,
-        baseCooling: 0, // No vegetation cooling
+        baseCooling: 0,
         materialCooling: materialData.temperatureReduction,
-
         coordinates: coords
       }
 
@@ -293,7 +260,6 @@ export default function DashboardPage() {
       updateUHIForSimulation(newSimulation)
     }
 
-    // hide the material impact banner after 5 seconds
     setTimeout(() => setMaterialApplied(false), 5000)
   }
 
@@ -366,6 +332,7 @@ export default function DashboardPage() {
           </div>
         )}
 
+        {/* Mode Controls */}
         <div className="mb-6 flex items-center justify-between bg-card/50 backdrop-blur-sm rounded-lg p-4 border">
           <div className="flex items-center gap-4">
             <div className="flex gap-2">
@@ -397,11 +364,9 @@ export default function DashboardPage() {
         </div>
 
         <div className="grid gap-6 lg:grid-cols-2">
-          {/* Main Simulation Tools */}
           <Visualization3D onWardSelect={handleWardSelection} />
           <PolicySimulationEngine onSimulate={handleSimulate} />
 
-          {/* Results Card (Inline) */}
           {simulationActive && simulationData && (
             <Card className="lg:col-span-2 p-8 border-primary/20 bg-linear-to-br from-primary/5 to-emerald-500/5">
               <div className="mb-4">
@@ -488,19 +453,21 @@ export default function DashboardPage() {
             simulationData={simulationData}
             comparisonMode={comparisonMode}
           />
-          {/* will probably restructure this part later */}
           <PredictedOutcomes
             simulationActive={simulationActive}
             simulationData={simulationData}
           />
-          <SentimentAnalysis
-            selectedWard={selectedWardData}
-            onZoneClick={handleSentimentZoneClick}
-          />
-          <MaterialRecommender
-            selectedZone={selectedWardData?.ward_name || selectedZone}
-            onMaterialApplied={handleMaterialApplied}
-          />
+
+          <div className="lg:col-span-2">
+            <MaterialRecommender
+              selectedZone={selectedWardData?.ward_name || selectedZone}
+              onMaterialApplied={handleMaterialApplied}
+            />
+          </div>
+
+          <div className="lg:col-span-2">
+            <SentimentAnalysis />
+          </div>
         </div>
       </div>
     </div>

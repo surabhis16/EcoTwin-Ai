@@ -7,8 +7,8 @@ class TextPreprocessor:
     _instance = None
     _nlp = None
     
+    # singleton to load spaCy model once
     def __new__(cls):
-        """Singleton to load spaCy model once"""
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
@@ -22,7 +22,6 @@ class TextPreprocessor:
             self._nlp = spacy.load('en_core_web_sm')
             print("loaded spaCy model")
         except OSError:
-            print("downloading spaCy model...")
             import os
             os.system('python -m spacy download en_core_web_sm')
             self._nlp = spacy.load('en_core_web_sm')
@@ -31,25 +30,25 @@ class TextPreprocessor:
         if not isinstance(text, str):
             return ""
         
-        # Convert to lowercase
+        # convert to lowercase
         text = text.lower()
         
-        # Remove URLs
+        # remove URLs
         text = re.sub(r'http\S+|www\.\S+', '', text)
         
-        # Remove email addresses
+        # remove email addresses
         text = re.sub(r'\S+@\S+', '', text)
         
-        # Remove user mentions (@username)
+        # remove user mentions (@username)
         text = re.sub(r'@\w+', '', text)
         
-        # Remove hashtags but keep the text
+        # remove hashtags but keep the text
         text = re.sub(r'#(\w+)', r'\1', text)
         
-        # Remove special characters but keep basic punctuation
+        # remove special characters but keep basic punctuation
         text = re.sub(r'[^a-zA-Z0-9\s.,!?-]', '', text)
         
-        # Remove extra whitespace
+        # remove extra whitespace
         text = re.sub(r'\s+', ' ', text).strip()
         
         return text
@@ -83,16 +82,8 @@ class TextPreprocessor:
         
         return features
     
+    # preprocess text for BERT-based sentiment analysis
     def preprocess_for_sentiment(self, text: str, keep_stopwords: bool = True) -> str:
-        """
-        preprocess text for BERT-based sentiment analysis
-        
-        For BERT models:
-        1. Clean text (remove URLs, mentions, etc.)
-        2. Keep stopwords (they carry sentiment)
-        3. Don't lemmatize (BERT handles morphology)
-        
-        """
         # Basic cleaning
         cleaned = self.clean_text(text)
         

@@ -6,12 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { AlertTriangle, MessageSquare, Loader2, RefreshCw, MapPin, Globe, ExternalLink, Calendar } from "lucide-react"
 import { useState, useEffect } from "react"
 
-interface SentimentAnalysisProps {
-  selectedWard?: any
-  onZoneClick?: (wardNumber: number) => void
-}
-
-export function SentimentAnalysis({ selectedWard, onZoneClick }: SentimentAnalysisProps) {
+export function SentimentAnalysis() {
   const [activeFilter, setActiveFilter] = useState<"all" | "infrastructure" | "water" | "urban_planning" | "stress">("all")
   const [activeTab, setActiveTab] = useState<"ward" | "citywide">("ward")
   const [loading, setLoading] = useState(true)
@@ -20,18 +15,10 @@ export function SentimentAnalysis({ selectedWard, onZoneClick }: SentimentAnalys
   const [statistics, setStatistics] = useState<any>(null)
   const [hotspots, setHotspots] = useState<any[]>([])
   const [citywidePost, setCitywidePost] = useState<any[]>([])
-  const [selectedZone, setSelectedZone] = useState<any>(null)
-  const [wardSentiment, setWardSentiment] = useState<any>(null)
 
   useEffect(() => {
     fetchData()
   }, [])
-
-  useEffect(() => {
-    if (selectedWard?.wardId || selectedWard?.ward_number) {
-      fetchWardSentiment(selectedWard.wardId || selectedWard.ward_number)
-    }
-  }, [selectedWard])
 
   const fetchData = async () => {
     setLoading(true)
@@ -63,19 +50,6 @@ export function SentimentAnalysis({ selectedWard, onZoneClick }: SentimentAnalys
     }
   }
 
-  const fetchWardSentiment = async (wardNumber: number) => {
-    try {
-      const res = await fetch(`http://localhost:8000/api/sentiment/ward-sentiment/${wardNumber}`)
-      if (res.ok) {
-        const data = await res.json()
-        setWardSentiment(data)
-      }
-    } catch (err) {
-      console.error('Failed to fetch ward sentiment:', err)
-      setWardSentiment(null)
-    }
-  }
-
   const triggerDataCollection = async () => {
     setCollecting(true)
     setCollectionProgress("Initiating collection...")
@@ -88,12 +62,11 @@ export function SentimentAnalysis({ selectedWard, onZoneClick }: SentimentAnalys
       if (res.ok) {
         setCollectionProgress("Collecting posts from Reddit and news sources...")
 
-        // Poll for updates every 2 seconds
         let attempts = 0
         const pollInterval = setInterval(async () => {
           attempts++
 
-          if (attempts > 30) { // Stop after 60 seconds
+          if (attempts > 30) {
             clearInterval(pollInterval)
             setCollecting(false)
             setCollectionProgress("")
@@ -104,7 +77,6 @@ export function SentimentAnalysis({ selectedWard, onZoneClick }: SentimentAnalys
           setCollectionProgress(`Processing... (${attempts * 2}s)`)
         }, 2000)
 
-        // Wait 10 seconds then refresh
         setTimeout(() => {
           clearInterval(pollInterval)
           setCollectionProgress("Finalizing analysis...")
@@ -134,14 +106,6 @@ export function SentimentAnalysis({ selectedWard, onZoneClick }: SentimentAnalys
       case "positive": return "bg-emerald-500"
       case "negative": return "bg-red-500"
       default: return "bg-yellow-500"
-    }
-  }
-
-  const getStressColor = (risk: string) => {
-    switch (risk) {
-      case "high": return "text-red-500"
-      case "medium": return "text-yellow-500"
-      default: return "text-emerald-500"
     }
   }
 
@@ -201,7 +165,7 @@ export function SentimentAnalysis({ selectedWard, onZoneClick }: SentimentAnalys
 
       {/* Statistics */}
       {statistics && (
-        <div className="grid grid-cols-4 gap-3 mb-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
           <div className="p-3 rounded-lg bg-muted/30">
             <p className="text-xs text-muted-foreground mb-1">Ward Posts</p>
             <p className="text-xl font-bold">{statistics.total_feedback}</p>
@@ -223,50 +187,6 @@ export function SentimentAnalysis({ selectedWard, onZoneClick }: SentimentAnalys
               {statistics.high_stress_zones}
             </p>
           </div>
-        </div>
-      )}
-
-      {/* Selected Ward Sentiment */}
-      {wardSentiment && wardSentiment.post_count > 0 && (
-        <div className="mb-4 p-4 bg-primary/10 border border-primary/20 rounded-lg">
-          <div className="flex items-start justify-between mb-2">
-            <div>
-              <p className="font-semibold text-primary flex items-center gap-2">
-                <MapPin className="h-4 w-4" />
-                {wardSentiment.ward_name}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {wardSentiment.post_count} feedback submissions
-              </p>
-            </div>
-            <Badge
-              variant="outline"
-              className={`${wardSentiment.sentiment === "positive"
-                ? "border-emerald-500/50 text-emerald-500"
-                : wardSentiment.sentiment === "negative"
-                  ? "border-red-500/50 text-red-500"
-                  : "border-yellow-500/50 text-yellow-500"
-                }`}
-            >
-              {wardSentiment.sentiment}
-            </Badge>
-          </div>
-          <div className="flex items-center gap-3 mb-2">
-            <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
-              <div
-                className={getSentimentBgColor(wardSentiment.sentiment)}
-                style={{ width: `${Math.abs(wardSentiment.sentiment_score) * 100}%` }}
-              />
-            </div>
-            <span className={`text-sm font-bold ${getSentimentColor(wardSentiment.sentiment_score)}`}>
-              {(wardSentiment.sentiment_score * 100).toFixed(0)}
-            </span>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Stress Risk: <span className={`font-semibold ${getStressColor(wardSentiment.stress_risk)}`}>
-              {wardSentiment.stress_risk.toUpperCase()}
-            </span>
-          </p>
         </div>
       )}
 
@@ -336,10 +256,10 @@ export function SentimentAnalysis({ selectedWard, onZoneClick }: SentimentAnalys
             </Button>
           </div>
 
-          {/* Hotspots List */}
-          <div className="space-y-2 max-h-96 overflow-y-auto">
+          {/* Hotspots Grid - Full Width Layout */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-125 overflow-y-auto">
             {filteredHotspots.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
+              <div className="col-span-full text-center py-12 text-muted-foreground">
                 <MessageSquare className="h-12 w-12 mx-auto mb-2 opacity-50" />
                 <p>No ward-specific sentiment data</p>
               </div>
@@ -347,25 +267,14 @@ export function SentimentAnalysis({ selectedWard, onZoneClick }: SentimentAnalys
               filteredHotspots.map((spot, idx) => (
                 <div
                   key={idx}
-                  className={`p-3 rounded-lg border cursor-pointer transition-all ${selectedZone?.ward_number === spot.ward_number
-                    ? "bg-accent/20 border-accent"
-                    : "bg-muted/30 border-transparent hover:bg-muted/50"
-                    }`}
-                  onClick={() => {
-                    setSelectedZone(spot)
-                    if (onZoneClick) {
-                      onZoneClick(spot.ward_number)
-                    }
-                  }}
+                  className="p-3 rounded-lg border bg-muted/30 border-transparent hover:bg-muted/50 transition-all"
                 >
                   <div className="flex items-start justify-between mb-2">
                     <div className="flex items-center gap-2">
-                      <span className="font-semibold text-sm">{spot.location}</span>
-                      <AlertTriangle className="h-3 w-3 text-red-500" />
+                      <MapPin className="h-4 w-4 text-primary shrink-0" />
+                      <span className="font-semibold text-sm line-clamp-1">{spot.location}</span>
                     </div>
-                    <Badge variant="outline" className="text-xs border-red-500/50 text-red-500">
-                      {spot.policy_category}
-                    </Badge>
+                    <AlertTriangle className="h-4 w-4 text-red-500 shrink-0" />
                   </div>
 
                   <div className="flex items-center gap-3 mb-2">
@@ -384,10 +293,10 @@ export function SentimentAnalysis({ selectedWard, onZoneClick }: SentimentAnalys
                     {spot.example_feedback}
                   </p>
 
-                  <div className="flex items-center justify-between text-xs">
+                  <div className="flex items-center justify-between text-xs gap-2">
                     <div className="flex items-center gap-2 text-muted-foreground">
                       <Badge variant="secondary" className="text-xs">
-                        {spot.platform}
+                        {spot.policy_category}
                       </Badge>
                       {spot.created_at && (
                         <span className="flex items-center gap-1">
@@ -401,10 +310,9 @@ export function SentimentAnalysis({ selectedWard, onZoneClick }: SentimentAnalys
                         href={spot.source_url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        onClick={(e) => e.stopPropagation()}
-                        className="text-primary hover:underline flex items-center gap-1"
+                        className="text-primary hover:underline flex items-center gap-1 shrink-0"
                       >
-                        Source <ExternalLink className="h-3 w-3" />
+                        <ExternalLink className="h-3 w-3" />
                       </a>
                     )}
                   </div>
@@ -417,9 +325,9 @@ export function SentimentAnalysis({ selectedWard, onZoneClick }: SentimentAnalys
 
       {/* City-Wide Tab */}
       {activeTab === "citywide" && (
-        <div className="space-y-2 max-h-96 overflow-y-auto">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-125 overflow-y-auto">
           {citywidePost.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
+            <div className="col-span-full text-center py-12 text-muted-foreground">
               <Globe className="h-12 w-12 mx-auto mb-2 opacity-50" />
               <p>No city-wide posts yet</p>
             </div>
@@ -431,12 +339,12 @@ export function SentimentAnalysis({ selectedWard, onZoneClick }: SentimentAnalys
               >
                 <div className="flex items-start justify-between mb-2">
                   <div className="flex items-center gap-2">
-                    <Globe className="h-4 w-4 text-blue-500" />
-                    <span className="font-semibold text-sm">{post.location}</span>
+                    <Globe className="h-4 w-4 text-blue-500 shrink-0" />
+                    <span className="font-semibold text-sm line-clamp-1">{post.location}</span>
                   </div>
                   <Badge
                     variant="outline"
-                    className={`text-xs ${post.sentiment === "positive"
+                    className={`text-xs shrink-0 ${post.sentiment === "positive"
                       ? "border-emerald-500/50 text-emerald-500"
                       : post.sentiment === "negative"
                         ? "border-red-500/50 text-red-500"
@@ -459,33 +367,27 @@ export function SentimentAnalysis({ selectedWard, onZoneClick }: SentimentAnalys
                   </span>
                 </div>
 
-                <p className="text-xs text-muted-foreground mb-2">
+                <p className="text-xs text-muted-foreground mb-2 line-clamp-2">
                   {post.text_preview}...
                 </p>
 
-                <div className="flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-2 text-muted-foreground">
+                <div className="flex items-center justify-between text-xs gap-2">
+                  <div className="flex items-center gap-2 text-muted-foreground flex-wrap">
                     <Badge variant="secondary" className="text-xs">
                       {post.platform}
                     </Badge>
                     <Badge variant="secondary" className="text-xs">
                       {post.policy_category}
                     </Badge>
-                    {post.created_at && (
-                      <span className="flex items-center gap-1">
-                        <Calendar className="h-3 w-3" />
-                        {formatDate(post.created_at)}
-                      </span>
-                    )}
                   </div>
                   {post.source_url && (
                     <a
                       href={post.source_url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-primary hover:underline flex items-center gap-1"
+                      className="text-primary hover:underline flex items-center gap-1 shrink-0"
                     >
-                      Source <ExternalLink className="h-3 w-3" />
+                      <ExternalLink className="h-3 w-3" />
                     </a>
                   )}
                 </div>
