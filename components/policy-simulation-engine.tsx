@@ -3,7 +3,7 @@ import { Card } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Slider } from "@/components/ui/slider"
-import { Sparkles, ChevronRight, Check, Loader2, Package } from "lucide-react"
+import { Sparkles, ChevronRight, Check, Loader2, Package, Info } from "lucide-react"
 import { useState, useEffect } from "react"
 
 interface PolicySimulationEngineProps {
@@ -55,11 +55,7 @@ export default function PolicySimulationEngine({ onSimulate }: PolicySimulationE
     setMaterialsLoading(true)
     try {
       const wardName = wards.find(w => w.id === parseInt(wardId))?.name || ""
-
-      // determine application based on intervention type
-      const application = intervention === "green" ? "Wall" :
-        intervention === "cooling" ? "Roof" :
-          intervention === "materials" ? "Wall" : "Wall"
+      const application = intervention === "cooling" ? "Roof" : "Wall"
 
       const response = await fetch('http://localhost:8000/api/materials/recommend', {
         method: 'POST',
@@ -80,8 +76,7 @@ export default function PolicySimulationEngine({ onSimulate }: PolicySimulationE
       const data = await response.json()
       setMaterials(data)
 
-      // auto-select top material
-      if (data.length > 0) {
+      if (data.length > 0 && !selectedMaterial) {
         setSelectedMaterial(data[0])
       }
     } catch (err) {
@@ -110,81 +105,109 @@ export default function PolicySimulationEngine({ onSimulate }: PolicySimulationE
     setLoading(true)
 
     try {
-      // calc ndvi increase based on intervention and intensity
-      let ndviIncrease = 0
-      if (intervention === "green") {
-        ndviIncrease = (intensity[0] / 100) * 0.3
-      } else if (intervention === "cooling") {
-        ndviIncrease = (intensity[0] / 100) * 0.2
-      } else if (intervention === "materials") {
-        ndviIncrease = (intensity[0] / 100) * 0.1
-      }
+      const intensityFactor = intensity[0] / 100
+      let projectedNdviIncrease = 0
 
+      // map intensity to realistic max NDVI gains
+      if (intervention === "green") projectedNdviIncrease = intensityFactor * 0.25
+      else if (intervention === "cooling") projectedNdviIncrease = intensityFactor * 0.15
+      else if (intervention === "materials") projectedNdviIncrease = intensityFactor * 0.05
+
+      // call backend
       const res = await fetch('http://localhost:8000/api/uhi/simulate-ward', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ward_id: parseInt(wardId),
-          intensity: ndviIncrease
+          intensity: projectedNdviIncrease
         })
       })
 
+      if (!res.ok) throw new Error(`Simulation API failed`)
       const prediction = await res.json()
 
-      // calculate environmental impact
-      const areaSqKm = areaData?.area_sqkm || 1
+      const areaSqKm = areaData?.area_sqkm || prediction.area_sqkm || 5.0
       const areaHectares = areaSqKm * 100
-      const ndviGain = prediction.ndvi_after - prediction.ndvi_before
 
-      // base CO2 from green cover
-      const baseCO2 = Math.max(0, ndviGain) * areaHectares * 25
+      const ndviBefore = prediction.ndvi_before || prediction.baseline_ndvi || areaData?.baseline_ndvi || 0.1
 
-      // add material CO2 benefit if material selected
-      const materialCO2 = selectedMaterial ?
-        (selectedMaterial.predicted_impact.co2Reduction * areaHectares * 0.01) : 0
+      let finalNdviAfter = prediction.ndvi_after;
+      if (!finalNdviAfter || Math.abs(finalNdviAfter - ndviBefore) < 0.001) {
+        finalNdviAfter = ndviBefore + projectedNdviIncrease;
+      }
+      const ndviGain = Math.max(0, finalNdviAfter - ndviBefore)
 
-      const totalCO2 = baseCO2 + materialCO2
+      // realistic phys calculations
 
-      // add material cooling benefit
-      const materialCooling = selectedMaterial ?
-        Math.abs(selectedMaterial.predicted_impact.tempChange) : 0
+      // vegetation Cooling (Air Temp)
+      // +0.1 NDVI ≈ -0.5°C Air Temp
+      let airTempReduction = ndviGain * 4.5;
 
-      const totalCooling = prediction.cooling_effect + (materialCooling * 0.5) // 50% of material's cooling
+      // material Cooling (Surface -> Air)
+      let materialCooling = 0;
+      let materialEmbodiedCO2 = 0;
 
-      const treeEquivalent = Math.round(totalCO2 / 0.022)
-      const carEquivalent = Math.round(totalCO2 / 4.6)
+      if (selectedMaterial) {
+        const matImpact = selectedMaterial.predicted_impact?.tempChange || 0;
+        // Scale down surface temp impact to air temp (approx 20-25%)
+        materialCooling = Math.abs(matImpact) * 0.25;
 
-      const result = {
-        wardId,
-        wardName: wards.find(w => w.id === parseInt(wardId))?.name,
-        intervention,
-        intensity: intensity[0],
-        temperatureReduction: totalCooling,
-        baseCooling: prediction.cooling_effect,
-        materialCooling: materialCooling * 0.5,
-        area_sqkm: areaSqKm,
-        lstBefore: prediction.lst_before,
-        lstAfter: prediction.lst_after - (materialCooling * 0.5),
-        ndviBefore: prediction.ndvi_before,
-        ndviAfter: prediction.ndvi_after,
-        riskReduction: prediction.risk_reduction,
-        co2Offset: parseFloat(totalCO2.toFixed(0)),
-        baseCO2: parseFloat(baseCO2.toFixed(0)),
-        materialCO2: parseFloat(materialCO2.toFixed(0)),
-        treeEquivalent: treeEquivalent,
-        carEquivalent: carEquivalent,
-        selectedMaterial: selectedMaterial ? {
-          name: selectedMaterial.material_name,
-          type: selectedMaterial.usage_type,
-          coolingIndex: selectedMaterial.cooling_index,
-          tempReduction: materialCooling * 0.5,
-          co2Reduction: materialCO2
-        } : null
+        // Calculate One-time Embodied Carbon Avoidance
+        materialEmbodiedCO2 = (selectedMaterial.predicted_impact?.co2Reduction || 0) * areaHectares * 0.01;
       }
 
+      // Total Air Temp Reduction
+      const totalCooling = airTempReduction + materialCooling;
+
+      // Biological Carbon Sequestration (Annual)
+      // 1 hectare of urban greening ~ 3.5 tonnes CO2/year
+      const bioSequestration = (ndviGain / 0.2) * areaHectares * 3.5;
+
+      const result = {
+        wardId: parseInt(wardId),
+        wardName: wards.find(w => w.id === parseInt(wardId))?.name || `Ward ${wardId}`,
+        intervention: intervention,
+        intensity: intensity[0],
+        area_sqkm: areaSqKm,
+
+        // Temp
+        temperatureReduction: totalCooling, // Total Air Temp Drop
+        baseCooling: airTempReduction,      // From Veg
+        materialCooling: materialCooling,   // From Bricks/Roofs
+        lstBefore: prediction.lst_before || 35,
+
+        // NDVI
+        ndviBefore: ndviBefore,
+        ndviAfter: finalNdviAfter,
+        ndviGain: ndviGain,
+
+        // Carbon
+        co2Offset: Math.round(bioSequestration),        // Annual (Trees) - displayed in main card
+        materialCO2: Math.round(materialEmbodiedCO2),   // One-time (Materials) - displayed in bonus
+
+        // Risk
+        risk_before: prediction.risk_before || "Moderate",
+        risk_after: totalCooling > 1.0 ? "Low" : (prediction.risk_before || "Moderate"),
+
+        // Equivalents (Based on Annual Sequestration)
+        treeEquivalent: Math.round((bioSequestration * 1000) / 22),
+        carEquivalent: Math.round(bioSequestration / 4.6),
+
+        // Material
+        selectedMaterial: selectedMaterial ? {
+          name: selectedMaterial.material_name,
+          tempReduction: materialCooling,
+          co2Reduction: materialEmbodiedCO2
+        } : null,
+
+        coordinates: prediction.coordinates || { lon: 77.59, lat: 12.97 }
+      }
+
+      console.log("Simulation Result:", result)
       setSimulationResult(result)
       onSimulate(result)
       setCurrentStep(6)
+
     } catch (err) {
       console.error("Simulation failed:", err)
       alert("Simulation failed. Check backend connection.")
@@ -281,9 +304,11 @@ export default function PolicySimulationEngine({ onSimulate }: PolicySimulationE
             {areaData && (
               <div className="p-3 bg-muted/50 rounded-lg text-sm">
                 <p className="font-semibold mb-1">Baseline Data:</p>
-                <p>Temperature: {areaData.lst_before?.toFixed(2)}°C</p>
-                <p>NDVI: {areaData.ndvi_before?.toFixed(3)}</p>
-                <p>Risk: {areaData.risk_before}</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <p>Temp: {areaData.lst_before?.toFixed(2) || areaData.baseline_lst?.toFixed(2)}°C</p>
+                  <p>NDVI: {areaData.ndvi_before?.toFixed(3) || areaData.baseline_ndvi?.toFixed(3)}</p>
+                  <p>Risk: <span className={areaData.risk_before === "High" ? "text-red-400 font-bold" : "text-yellow-400"}>{areaData.risk_before || 'Unknown'}</span></p>
+                </div>
               </div>
             )}
           </div>
@@ -304,6 +329,12 @@ export default function PolicySimulationEngine({ onSimulate }: PolicySimulationE
                 </SelectContent>
               </Select>
             </div>
+            <div className="text-xs text-muted-foreground bg-blue-500/10 p-3 rounded border border-blue-500/20">
+              <Info className="h-3 w-3 inline mr-1" />
+              {intervention === "green" ? "Focuses on increasing vegetation cover." :
+                intervention === "materials" ? "Focuses on building material efficiency." :
+                  intervention === "cooling" ? "Mixed strategy for heat reduction." : "Select an intervention to see details."}
+            </div>
           </div>
         )}
 
@@ -313,6 +344,10 @@ export default function PolicySimulationEngine({ onSimulate }: PolicySimulationE
               <Label>Recommended Materials</Label>
               {materialsLoading && <Loader2 className="h-4 w-4 animate-spin" />}
             </div>
+
+            <p className="text-xs text-muted-foreground mb-2">
+              Select a material to combine with your intervention (e.g., for walls/pavements).
+            </p>
 
             {materials.length === 0 && !materialsLoading && (
               <p className="text-sm text-muted-foreground">No materials available</p>
@@ -340,15 +375,17 @@ export default function PolicySimulationEngine({ onSimulate }: PolicySimulationE
                   <div className="grid grid-cols-3 gap-2 text-xs">
                     <div>
                       <p className="text-muted-foreground">Cooling</p>
-                      <p className="font-bold">{Math.abs(material.predicted_impact.tempChange)}°C</p>
+                      <p className="font-bold">High</p>
                     </div>
                     <div>
                       <p className="text-muted-foreground">CO₂</p>
-                      <p className="font-bold">{material.predicted_impact.co2Reduction.toFixed(0)} kg</p>
+                      <p className="font-bold">
+                        {(material.predicted_impact?.co2Reduction || 0).toFixed(0)} kg
+                      </p>
                     </div>
                     <div>
                       <p className="text-muted-foreground">Cost</p>
-                      <p className="font-bold">₹{(material.price_inr_per_m3 / 1000).toFixed(1)}k/m³</p>
+                      <p className="font-bold">₹{((material.price_inr_per_m3 || 0) / 1000).toFixed(1)}k/m³</p>
                     </div>
                   </div>
                 </div>
@@ -371,13 +408,16 @@ export default function PolicySimulationEngine({ onSimulate }: PolicySimulationE
                 className="mt-4"
               />
               <div className="flex justify-between text-xs text-muted-foreground mt-2">
-                <span>Pilot</span>
-                <span>Full Scale</span>
+                <span>Pilot (10%)</span>
+                <span>Full Scale (100%)</span>
               </div>
             </div>
-            <p className="text-xs text-muted-foreground italic">
-              NDVI gain: +{((intensity[0] / 100) * (intervention === "green" ? 0.3 : intervention === "cooling" ? 0.2 : 0.1)).toFixed(2)}
-            </p>
+            <div className="p-3 bg-muted/50 rounded-lg text-sm">
+              <p className="font-semibold mb-1">Projected NDVI Increase:</p>
+              <p className="text-primary font-mono text-lg">
+                +{((intensity[0] / 100) * (intervention === "green" ? 0.25 : intervention === "cooling" ? 0.15 : 0.05)).toFixed(3)}
+              </p>
+            </div>
           </div>
         )}
 
@@ -394,7 +434,7 @@ export default function PolicySimulationEngine({ onSimulate }: PolicySimulationE
               </div>
               <div className="flex justify-between">
                 <span className="text-sm text-muted-foreground">Intervention</span>
-                <span className="font-semibold">{intervention}</span>
+                <span className="font-semibold capitalize">{intervention}</span>
               </div>
               {selectedMaterial && (
                 <div className="pt-2 border-t">
@@ -403,9 +443,6 @@ export default function PolicySimulationEngine({ onSimulate }: PolicySimulationE
                     Selected Material
                   </p>
                   <p className="text-sm">{selectedMaterial.material_name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    +{Math.abs(selectedMaterial.predicted_impact.tempChange * 0.5).toFixed(2)}°C additional cooling
-                  </p>
                 </div>
               )}
               <div className="flex justify-between pt-2 border-t">
@@ -424,51 +461,53 @@ export default function PolicySimulationEngine({ onSimulate }: PolicySimulationE
               <p className="text-xs text-muted-foreground mb-4">{simulationResult.wardName}</p>
 
               <div className="grid grid-cols-2 gap-3 w-full mb-4">
+                {/* Temperature Card */}
                 <div className="bg-background/50 p-3 rounded-lg border">
-                  <p className="text-[10px] uppercase text-muted-foreground font-bold mb-1">Total Cooling</p>
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-[10px] uppercase text-muted-foreground font-bold">Total Cooling</p>
+                    <span className="text-[10px] bg-blue-100 text-blue-800 px-1 rounded">Air Temp</span>
+                  </div>
                   <p className="text-2xl font-black text-emerald-500">
-                    {simulationResult.temperatureReduction.toFixed(2)}°C
+                    -{simulationResult.temperatureReduction.toFixed(2)}°C
                   </p>
-                  {simulationResult.selectedMaterial && (
-                    <p className="text-[9px] text-muted-foreground mt-1">
-                      Base: {simulationResult.baseCooling.toFixed(2)}°C + Material: {simulationResult.materialCooling.toFixed(2)}°C
-                    </p>
-                  )}
+                  <p className="text-[9px] text-muted-foreground mt-1">
+                    Surface Temp Drop: ~{(simulationResult.temperatureReduction * 3).toFixed(1)}°C
+                  </p>
                 </div>
 
+                {/* Carbon Card- biological seq */}
                 <div className="bg-background/50 p-3 rounded-lg border">
                   <p className="text-[10px] uppercase text-muted-foreground font-bold mb-1">Carbon Offset</p>
                   <p className="text-2xl font-black text-blue-500">
-                    {simulationResult.co2Offset} t/y
+                    {simulationResult.co2Offset.toLocaleString()} t/y
                   </p>
-                  {simulationResult.selectedMaterial && (
-                    <p className="text-[9px] text-muted-foreground mt-1">
-                      +{simulationResult.materialCO2.toFixed(0)} from materials
-                    </p>
-                  )}
+                  <p className="text-[9px] text-muted-foreground mt-1">
+                    Annual Sequestration
+                  </p>
                 </div>
               </div>
 
+              {/* Material Specific Impact*/}
               {simulationResult.selectedMaterial && (
-                <div className="w-full p-3 bg-primary/10 rounded-lg border border-primary/20 mb-4">
-                  <p className="text-xs font-bold mb-1 flex items-center gap-2">
+                <div className="w-full p-3 bg-orange-500/10 rounded-lg border border-orange-500/20 mb-4">
+                  <p className="text-xs font-bold mb-1 flex items-center gap-2 text-orange-700 dark:text-orange-400">
                     <Package className="h-3 w-3" />
-                    Material Impact
+                    Material Bonus ({simulationResult.selectedMaterial.name})
                   </p>
-                  <p className="text-xs">{simulationResult.selectedMaterial.name}</p>
                   <div className="grid grid-cols-2 gap-2 mt-2 text-xs">
                     <div>
-                      <p className="text-muted-foreground">Extra Cooling</p>
+                      <p className="text-muted-foreground">Indoor Cooling</p>
                       <p className="font-bold">+{simulationResult.selectedMaterial.tempReduction.toFixed(2)}°C</p>
                     </div>
                     <div>
-                      <p className="text-muted-foreground">Extra CO₂</p>
-                      <p className="font-bold">+{simulationResult.selectedMaterial.co2Reduction.toFixed(0)} t/y</p>
+                      <p className="text-muted-foreground">Embodied Carbon Avoided</p>
+                      <p className="font-bold">+{simulationResult.materialCO2.toFixed(0)} tonnes</p>
                     </div>
                   </div>
                 </div>
               )}
 
+              {/* Equivalents */}
               <div className="grid grid-cols-2 gap-3 w-full">
                 <div className="bg-background/50 p-3 rounded-lg border">
                   <p className="text-[10px] uppercase text-muted-foreground font-bold mb-1">Equivalent</p>
@@ -480,6 +519,13 @@ export default function PolicySimulationEngine({ onSimulate }: PolicySimulationE
                   <p className="text-lg font-black text-blue-500">{simulationResult.carEquivalent.toLocaleString()}</p>
                   <p className="text-[10px] text-muted-foreground">Cars off road</p>
                 </div>
+              </div>
+
+              <div className="w-full mt-4 p-2 rounded bg-muted/30 flex justify-between text-xs">
+                <span>NDVI Shift:</span>
+                <span className="font-mono font-bold text-green-600">
+                  {simulationResult.ndviBefore.toFixed(3)} → {simulationResult.ndviAfter.toFixed(3)}
+                </span>
               </div>
             </div>
 

@@ -2,270 +2,519 @@
 
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { AlertTriangle, MessageSquare, TrendingDown, TrendingUp } from "lucide-react"
-import { useState } from "react"
+import { Badge } from "@/components/ui/badge"
+import { AlertTriangle, MessageSquare, Loader2, RefreshCw, MapPin, Globe, ExternalLink, Calendar } from "lucide-react"
+import { useState, useEffect } from "react"
 
-const sentimentZones = [
-  {
-    id: 1,
-    name: "Koramangala",
-    lat: 12.9352,
-    lng: 77.6245,
-    sentiment: "positive",
-    score: 85,
-    trend: "up",
-    trendValue: "+5%",
-    dominantTheme: "Improved public transport",
-    feedbackCount: 342,
-    exampleFeedback: "New metro connectivity has reduced my commute time by 30 minutes.",
-    stressRisk: "low",
-  },
-  {
-    id: 2,
-    name: "Whitefield",
-    lat: 12.9698,
-    lng: 77.7499,
-    sentiment: "negative",
-    score: 42,
-    trend: "down",
-    trendValue: "-12%",
-    dominantTheme: "Traffic congestion",
-    feedbackCount: 567,
-    exampleFeedback: "Daily gridlock makes it impossible to reach work on time. Need better road planning.",
-    stressRisk: "high",
-  },
-  {
-    id: 3,
-    name: "Indiranagar",
-    lat: 12.9716,
-    lng: 77.6412,
-    sentiment: "positive",
-    score: 78,
-    trend: "up",
-    trendValue: "+2%",
-    dominantTheme: "Green space expansion",
-    feedbackCount: 289,
-    exampleFeedback: "The new parks have made our neighborhood so much more livable and pleasant.",
-    stressRisk: "low",
-  },
-  {
-    id: 4,
-    name: "Electronic City",
-    lat: 12.8456,
-    lng: 77.6603,
-    sentiment: "neutral",
-    score: 65,
-    trend: "up",
-    trendValue: "+8%",
-    dominantTheme: "Air quality concerns",
-    feedbackCount: 423,
-    exampleFeedback: "Some improvements with tree planting, but industrial emissions still a concern.",
-    stressRisk: "medium",
-  },
-  {
-    id: 5,
-    name: "Jayanagar",
-    lat: 12.925,
-    lng: 77.5937,
-    sentiment: "negative",
-    score: 38,
-    trend: "down",
-    trendValue: "-8%",
-    dominantTheme: "Waste management issues",
-    feedbackCount: 612,
-    exampleFeedback: "Garbage collection is irregular and causing health issues in our area.",
-    stressRisk: "high",
-  },
-  {
-    id: 6,
-    name: "HSR Layout",
-    lat: 12.9121,
-    lng: 77.6446,
-    sentiment: "neutral",
-    score: 58,
-    trend: "down",
-    trendValue: "-3%",
-    dominantTheme: "Water supply reliability",
-    feedbackCount: 398,
-    exampleFeedback: "Water cuts are becoming more frequent, need better infrastructure.",
-    stressRisk: "medium",
-  },
-]
+interface SentimentAnalysisProps {
+  selectedWard?: any
+  onZoneClick?: (wardNumber: number) => void
+}
 
-type FilterType = "all" | "positive" | "neutral" | "negative" | "stress"
+export function SentimentAnalysis({ selectedWard, onZoneClick }: SentimentAnalysisProps) {
+  const [activeFilter, setActiveFilter] = useState<"all" | "infrastructure" | "water" | "urban_planning" | "stress">("all")
+  const [activeTab, setActiveTab] = useState<"ward" | "citywide">("ward")
+  const [loading, setLoading] = useState(true)
+  const [collecting, setCollecting] = useState(false)
+  const [collectionProgress, setCollectionProgress] = useState<string>("")
+  const [statistics, setStatistics] = useState<any>(null)
+  const [hotspots, setHotspots] = useState<any[]>([])
+  const [citywidePost, setCitywidePost] = useState<any[]>([])
+  const [selectedZone, setSelectedZone] = useState<any>(null)
+  const [wardSentiment, setWardSentiment] = useState<any>(null)
 
-export function SentimentAnalysis() {
-  const [activeFilter, setActiveFilter] = useState<FilterType>("all")
-  const [selectedZone, setSelectedZone] = useState<(typeof sentimentZones)[0] | null>(null)
+  useEffect(() => {
+    fetchData()
+  }, [])
 
-  const filteredZones = sentimentZones.filter((zone) => {
-    if (activeFilter === "all") return true
-    if (activeFilter === "stress") return zone.stressRisk === "high"
-    return zone.sentiment === activeFilter
-  })
-
-  const getSentimentColor = (sentiment: string) => {
-    switch (sentiment) {
-      case "positive":
-        return "text-emerald-500"
-      case "negative":
-        return "text-red-500"
-      default:
-        return "text-yellow-500"
+  useEffect(() => {
+    if (selectedWard?.wardId || selectedWard?.ward_number) {
+      fetchWardSentiment(selectedWard.wardId || selectedWard.ward_number)
     }
+  }, [selectedWard])
+
+  const fetchData = async () => {
+    setLoading(true)
+    try {
+      const [statsRes, hotspotsRes, citywideRes] = await Promise.all([
+        fetch('http://localhost:8000/api/sentiment/statistics'),
+        fetch('http://localhost:8000/api/sentiment/hotspots?risk_level=high&limit=20'),
+        fetch('http://localhost:8000/api/sentiment/city-wide-sentiment?limit=20')
+      ])
+
+      if (statsRes.ok) {
+        const stats = await statsRes.json()
+        setStatistics(stats)
+      }
+
+      if (hotspotsRes.ok) {
+        const spots = await hotspotsRes.json()
+        setHotspots(spots.hotspots || [])
+      }
+
+      if (citywideRes.ok) {
+        const citywide = await citywideRes.json()
+        setCitywidePost(citywide.posts || [])
+      }
+    } catch (err) {
+      console.error('Failed to fetch sentiment data:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const fetchWardSentiment = async (wardNumber: number) => {
+    try {
+      const res = await fetch(`http://localhost:8000/api/sentiment/ward-sentiment/${wardNumber}`)
+      if (res.ok) {
+        const data = await res.json()
+        setWardSentiment(data)
+      }
+    } catch (err) {
+      console.error('Failed to fetch ward sentiment:', err)
+      setWardSentiment(null)
+    }
+  }
+
+  const triggerDataCollection = async () => {
+    setCollecting(true)
+    setCollectionProgress("Initiating collection...")
+
+    try {
+      const res = await fetch('http://localhost:8000/api/sentiment/collect-reddit?max_posts=100', {
+        method: 'POST'
+      })
+
+      if (res.ok) {
+        setCollectionProgress("Collecting posts from Reddit and news sources...")
+
+        // Poll for updates every 2 seconds
+        let attempts = 0
+        const pollInterval = setInterval(async () => {
+          attempts++
+
+          if (attempts > 30) { // Stop after 60 seconds
+            clearInterval(pollInterval)
+            setCollecting(false)
+            setCollectionProgress("")
+            fetchData()
+            return
+          }
+
+          setCollectionProgress(`Processing... (${attempts * 2}s)`)
+        }, 2000)
+
+        // Wait 10 seconds then refresh
+        setTimeout(() => {
+          clearInterval(pollInterval)
+          setCollectionProgress("Finalizing analysis...")
+
+          setTimeout(() => {
+            fetchData()
+            setCollecting(false)
+            setCollectionProgress("")
+          }, 2000)
+        }, 10000)
+      }
+    } catch (err) {
+      console.error('Collection failed:', err)
+      setCollecting(false)
+      setCollectionProgress("")
+    }
+  }
+
+  const getSentimentColor = (score: number) => {
+    if (score > 0.2) return "text-emerald-500"
+    if (score < -0.2) return "text-red-500"
+    return "text-yellow-500"
   }
 
   const getSentimentBgColor = (sentiment: string) => {
     switch (sentiment) {
-      case "positive":
-        return "bg-emerald-500"
-      case "negative":
-        return "bg-red-500"
-      default:
-        return "bg-yellow-500"
+      case "positive": return "bg-emerald-500"
+      case "negative": return "bg-red-500"
+      default: return "bg-yellow-500"
     }
   }
 
-  const getStressRiskColor = (risk: string) => {
+  const getStressColor = (risk: string) => {
     switch (risk) {
-      case "high":
-        return "text-red-500"
-      case "medium":
-        return "text-yellow-500"
-      default:
-        return "text-emerald-500"
+      case "high": return "text-red-500"
+      case "medium": return "text-yellow-500"
+      default: return "text-emerald-500"
     }
+  }
+
+  const formatDate = (dateString: string) => {
+    if (!dateString) return ""
+    const date = new Date(dateString)
+    return date.toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })
+  }
+
+  const filteredHotspots = activeFilter === "all"
+    ? hotspots
+    : activeFilter === "stress"
+      ? hotspots
+      : hotspots.filter(h => h.policy_category === activeFilter)
+
+  if (loading) {
+    return (
+      <Card className="p-6 bg-card/50 backdrop-blur-sm">
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      </Card>
+    )
   }
 
   return (
     <Card className="p-6 bg-card/50 backdrop-blur-sm">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h3 className="text-2xl font-bold mb-1">Urban Intelligence Layer</h3>
-          <p className="text-sm text-muted-foreground">Geo-tagged citizen sentiment heatmap</p>
+          <h3 className="text-2xl font-bold mb-1 flex items-center gap-2">
+            <MessageSquare className="h-6 w-6 text-accent" />
+            Urban Intelligence Layer
+          </h3>
+          <p className="text-sm text-muted-foreground">
+            Real-time citizen sentiment from Reddit & News
+          </p>
         </div>
-        <MessageSquare className="h-6 w-6 text-accent" />
-      </div>
-
-      <div className="mb-6 flex flex-wrap gap-2">
         <Button
-          variant={activeFilter === "all" ? "default" : "outline"}
+          variant="outline"
           size="sm"
-          onClick={() => setActiveFilter("all")}
+          onClick={triggerDataCollection}
+          disabled={collecting}
         >
-          All Zones
-        </Button>
-        <Button
-          variant={activeFilter === "positive" ? "default" : "outline"}
-          size="sm"
-          onClick={() => setActiveFilter("positive")}
-          className={activeFilter === "positive" ? "bg-emerald-600 hover:bg-emerald-700" : ""}
-        >
-          Positive
-        </Button>
-        <Button
-          variant={activeFilter === "neutral" ? "default" : "outline"}
-          size="sm"
-          onClick={() => setActiveFilter("neutral")}
-          className={activeFilter === "neutral" ? "bg-yellow-600 hover:bg-yellow-700" : ""}
-        >
-          Neutral
-        </Button>
-        <Button
-          variant={activeFilter === "negative" ? "default" : "outline"}
-          size="sm"
-          onClick={() => setActiveFilter("negative")}
-          className={activeFilter === "negative" ? "bg-red-600 hover:bg-red-700" : ""}
-        >
-          Negative
-        </Button>
-        <Button
-          variant={activeFilter === "stress" ? "default" : "outline"}
-          size="sm"
-          onClick={() => setActiveFilter("stress")}
-          className="gap-1"
-        >
-          <AlertTriangle className="h-3 w-3" />
-          Stress Risk Zones
+          {collecting ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              {collectionProgress || "Collecting..."}
+            </>
+          ) : (
+            <>
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Update Data
+            </>
+          )}
         </Button>
       </div>
 
-      <div className="space-y-3 max-h-400px overflow-y-auto">
-        {filteredZones.map((zone) => (
-          <div
-            key={zone.id}
-            className={`p-4 rounded-lg border cursor-pointer transition-all ${selectedZone?.id === zone.id
-              ? "bg-accent/20 border-accent"
-              : "bg-muted/30 border-transparent hover:bg-muted/50 hover:border-accent/50"
-              }`}
-            onClick={() => setSelectedZone(zone)}
-          >
-            <div className="flex items-start justify-between mb-2">
-              <div className="flex items-center gap-2">
-                <span className="font-semibold">{zone.name}</span>
-                {zone.stressRisk === "high" && <AlertTriangle className="h-4 w-4 text-red-500" />}
-              </div>
-              <span
-                className={`text-sm font-medium flex items-center gap-1 ${zone.trend === "up" ? "text-emerald-500" : "text-red-500"
-                  }`}
-              >
-                {zone.trend === "up" ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-                {zone.trendValue}
-              </span>
-            </div>
-
-            <div className="flex items-center gap-3 mb-2">
-              <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
-                <div className={getSentimentBgColor(zone.sentiment)} style={{ width: `${zone.score}%` }} />
-              </div>
-              <span className={`text-sm font-bold min-w-12 text-right ${getSentimentColor(zone.sentiment)}`}>
-                {zone.score}/100
-              </span>
-            </div>
-
-            <p className="text-xs text-muted-foreground">
-              {zone.feedbackCount} feedback submissions • {zone.dominantTheme}
+      {/* Statistics */}
+      {statistics && (
+        <div className="grid grid-cols-4 gap-3 mb-4">
+          <div className="p-3 rounded-lg bg-muted/30">
+            <p className="text-xs text-muted-foreground mb-1">Ward Posts</p>
+            <p className="text-xl font-bold">{statistics.total_feedback}</p>
+          </div>
+          <div className="p-3 rounded-lg bg-muted/30">
+            <p className="text-xs text-muted-foreground mb-1">City-Wide</p>
+            <p className="text-xl font-bold text-blue-500">{statistics.citywide_feedback}</p>
+          </div>
+          <div className="p-3 rounded-lg bg-red-500/10">
+            <p className="text-xs text-muted-foreground mb-1">Negative</p>
+            <p className="text-xl font-bold text-red-500">
+              {statistics.distribution.negative}
             </p>
+          </div>
+          <div className="p-3 rounded-lg bg-amber-500/10">
+            <p className="text-xs text-muted-foreground mb-1">High Stress</p>
+            <p className="text-xl font-bold text-amber-500 flex items-center gap-1">
+              <AlertTriangle className="h-4 w-4" />
+              {statistics.high_stress_zones}
+            </p>
+          </div>
+        </div>
+      )}
 
-            {selectedZone?.id === zone.id && (
-              <div className="mt-4 pt-4 border-t space-y-3">
-                <div>
-                  <p className="text-xs font-semibold text-accent mb-1">Dominant Theme:</p>
-                  <p className="text-sm">{zone.dominantTheme}</p>
-                </div>
+      {/* Selected Ward Sentiment */}
+      {wardSentiment && wardSentiment.post_count > 0 && (
+        <div className="mb-4 p-4 bg-primary/10 border border-primary/20 rounded-lg">
+          <div className="flex items-start justify-between mb-2">
+            <div>
+              <p className="font-semibold text-primary flex items-center gap-2">
+                <MapPin className="h-4 w-4" />
+                {wardSentiment.ward_name}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {wardSentiment.post_count} feedback submissions
+              </p>
+            </div>
+            <Badge
+              variant="outline"
+              className={`${wardSentiment.sentiment === "positive"
+                ? "border-emerald-500/50 text-emerald-500"
+                : wardSentiment.sentiment === "negative"
+                  ? "border-red-500/50 text-red-500"
+                  : "border-yellow-500/50 text-yellow-500"
+                }`}
+            >
+              {wardSentiment.sentiment}
+            </Badge>
+          </div>
+          <div className="flex items-center gap-3 mb-2">
+            <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+              <div
+                className={getSentimentBgColor(wardSentiment.sentiment)}
+                style={{ width: `${Math.abs(wardSentiment.sentiment_score) * 100}%` }}
+              />
+            </div>
+            <span className={`text-sm font-bold ${getSentimentColor(wardSentiment.sentiment_score)}`}>
+              {(wardSentiment.sentiment_score * 100).toFixed(0)}
+            </span>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Stress Risk: <span className={`font-semibold ${getStressColor(wardSentiment.stress_risk)}`}>
+              {wardSentiment.stress_risk.toUpperCase()}
+            </span>
+          </p>
+        </div>
+      )}
 
-                <div>
-                  <p className="text-xs font-semibold text-accent mb-1">Example Feedback:</p>
-                  <p className="text-sm italic text-muted-foreground">"{zone.exampleFeedback}"</p>
-                </div>
+      {/* Tabs */}
+      <div className="mb-4 flex gap-2">
+        <Button
+          variant={activeTab === "ward" ? "default" : "outline"}
+          size="sm"
+          onClick={() => setActiveTab("ward")}
+          className="gap-2"
+        >
+          <MapPin className="h-4 w-4" />
+          Ward-Specific ({hotspots.length})
+        </Button>
+        <Button
+          variant={activeTab === "citywide" ? "default" : "outline"}
+          size="sm"
+          onClick={() => setActiveTab("citywide")}
+          className="gap-2"
+        >
+          <Globe className="h-4 w-4" />
+          City-Wide ({citywidePost.length})
+        </Button>
+      </div>
 
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-xs font-semibold text-accent mb-1">Stress Risk Level:</p>
-                    <p className={`text-sm font-bold uppercase ${getStressRiskColor(zone.stressRisk)}`}>
-                      {zone.stressRisk}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs font-semibold text-accent mb-1">30-Day Trend:</p>
-                    <p className={`text-sm font-bold ${zone.trend === "up" ? "text-emerald-500" : "text-red-500"}`}>
-                      {zone.trendValue}
-                    </p>
-                  </div>
-                </div>
+      {/* Ward-Specific Tab */}
+      {activeTab === "ward" && (
+        <>
+          {/* Category Filters */}
+          <div className="mb-4 flex flex-wrap gap-2">
+            <Button
+              variant={activeFilter === "all" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setActiveFilter("all")}
+            >
+              All Issues
+            </Button>
+            <Button
+              variant={activeFilter === "infrastructure" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setActiveFilter("infrastructure")}
+            >
+              Infrastructure
+            </Button>
+            <Button
+              variant={activeFilter === "water" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setActiveFilter("water")}
+            >
+              Water
+            </Button>
+            <Button
+              variant={activeFilter === "urban_planning" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setActiveFilter("urban_planning")}
+            >
+              Urban Planning
+            </Button>
+            <Button
+              variant={activeFilter === "stress" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setActiveFilter("stress")}
+              className="gap-1"
+            >
+              <AlertTriangle className="h-3 w-3" />
+              High Stress
+            </Button>
+          </div>
+
+          {/* Hotspots List */}
+          <div className="space-y-2 max-h-96 overflow-y-auto">
+            {filteredHotspots.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <MessageSquare className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                <p>No ward-specific sentiment data</p>
               </div>
+            ) : (
+              filteredHotspots.map((spot, idx) => (
+                <div
+                  key={idx}
+                  className={`p-3 rounded-lg border cursor-pointer transition-all ${selectedZone?.ward_number === spot.ward_number
+                    ? "bg-accent/20 border-accent"
+                    : "bg-muted/30 border-transparent hover:bg-muted/50"
+                    }`}
+                  onClick={() => {
+                    setSelectedZone(spot)
+                    if (onZoneClick) {
+                      onZoneClick(spot.ward_number)
+                    }
+                  }}
+                >
+                  <div className="flex items-start justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-sm">{spot.location}</span>
+                      <AlertTriangle className="h-3 w-3 text-red-500" />
+                    </div>
+                    <Badge variant="outline" className="text-xs border-red-500/50 text-red-500">
+                      {spot.policy_category}
+                    </Badge>
+                  </div>
+
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-red-500"
+                        style={{ width: `${Math.abs(spot.sentiment_score) * 100}%` }}
+                      />
+                    </div>
+                    <span className="text-xs font-bold text-red-500">
+                      {(spot.sentiment_score * 100).toFixed(0)}
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-muted-foreground line-clamp-2 mb-2">
+                    {spot.example_feedback}
+                  </p>
+
+                  <div className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <Badge variant="secondary" className="text-xs">
+                        {spot.platform}
+                      </Badge>
+                      {spot.created_at && (
+                        <span className="flex items-center gap-1">
+                          <Calendar className="h-3 w-3" />
+                          {formatDate(spot.created_at)}
+                        </span>
+                      )}
+                    </div>
+                    {spot.source_url && (
+                      <a
+                        href={spot.source_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="text-primary hover:underline flex items-center gap-1"
+                      >
+                        Source <ExternalLink className="h-3 w-3" />
+                      </a>
+                    )}
+                  </div>
+                </div>
+              ))
             )}
           </div>
-        ))}
-      </div>
+        </>
+      )}
 
-      <div className="mt-6 p-4 rounded-lg bg-accent/10 border border-accent/20">
-        <p className="text-sm text-center">
-          <span className="font-semibold text-accent">2,847</span> geo-tagged feedback submissions •{" "}
-          <span className="font-semibold text-red-500">
-            {sentimentZones.filter((z) => z.stressRisk === "high").length}
-          </span>{" "}
-          high-stress zones identified
+      {/* City-Wide Tab */}
+      {activeTab === "citywide" && (
+        <div className="space-y-2 max-h-96 overflow-y-auto">
+          {citywidePost.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <Globe className="h-12 w-12 mx-auto mb-2 opacity-50" />
+              <p>No city-wide posts yet</p>
+            </div>
+          ) : (
+            citywidePost.map((post, idx) => (
+              <div
+                key={idx}
+                className="p-3 rounded-lg border bg-muted/30 border-transparent"
+              >
+                <div className="flex items-start justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <Globe className="h-4 w-4 text-blue-500" />
+                    <span className="font-semibold text-sm">{post.location}</span>
+                  </div>
+                  <Badge
+                    variant="outline"
+                    className={`text-xs ${post.sentiment === "positive"
+                      ? "border-emerald-500/50 text-emerald-500"
+                      : post.sentiment === "negative"
+                        ? "border-red-500/50 text-red-500"
+                        : "border-yellow-500/50 text-yellow-500"
+                      }`}
+                  >
+                    {post.sentiment}
+                  </Badge>
+                </div>
+
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                    <div
+                      className={getSentimentBgColor(post.sentiment)}
+                      style={{ width: `${Math.abs(post.sentiment_score) * 100}%` }}
+                    />
+                  </div>
+                  <span className={`text-xs font-bold ${getSentimentColor(post.sentiment_score)}`}>
+                    {(post.sentiment_score * 100).toFixed(0)}
+                  </span>
+                </div>
+
+                <p className="text-xs text-muted-foreground mb-2">
+                  {post.text_preview}...
+                </p>
+
+                <div className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <Badge variant="secondary" className="text-xs">
+                      {post.platform}
+                    </Badge>
+                    <Badge variant="secondary" className="text-xs">
+                      {post.policy_category}
+                    </Badge>
+                    {post.created_at && (
+                      <span className="flex items-center gap-1">
+                        <Calendar className="h-3 w-3" />
+                        {formatDate(post.created_at)}
+                      </span>
+                    )}
+                  </div>
+                  {post.source_url && (
+                    <a
+                      href={post.source_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary hover:underline flex items-center gap-1"
+                    >
+                      Source <ExternalLink className="h-3 w-3" />
+                    </a>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
+      {/* Footer */}
+      <div className="mt-4 pt-4 border-t border-border">
+        <p className="text-xs text-center text-muted-foreground">
+          {statistics && (
+            <>
+              Analyzing{" "}
+              <span className="font-semibold text-foreground">
+                {statistics.total_feedback + statistics.citywide_feedback}
+              </span>{" "}
+              total posts •{" "}
+              <span className="font-semibold text-foreground">
+                {statistics.wards_covered}
+              </span>{" "}
+              wards covered •{" "}
+              <span className="font-semibold text-red-500">
+                {statistics.high_stress_zones}
+              </span>{" "}
+              high-stress zones
+            </>
+          )}
         </p>
       </div>
     </Card>

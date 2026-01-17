@@ -166,7 +166,7 @@ async def recommend_materials(request: MaterialRequest):
             
             # temperature reduction: scale 0-1 to realistic 0.5-8°C range
             # higher heat multiplier = more benefit in hot areas
-            temp_reduction = cooling_normalized * heat_multiplier * 8.0  # max ~8°C in extreme heat zones
+            temp_reduction = cooling_normalized * heat_multiplier * 2.5  
             
             # Carbon score: transport_adjusted_carbon is in kg CO2/kg (0.13-2.025 range)
             # Lower carbon = better material

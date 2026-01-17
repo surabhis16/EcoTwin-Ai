@@ -157,7 +157,11 @@ def simulate_ward(payload: SimulationInput):
     lst_after_pred = model.predict(df_after)[0]
     
     # Calculate synthetic delta from model
-    delta = float(lst_after_pred - lst_before_pred)
+    raw_delta = float(lst_after_pred - lst_before_pred)
+
+    # convert Surface Temp Delta to Air Temp Delta
+    # apply a 0.33 factor because Air Temp changes slower than Surface Temp
+    delta = raw_delta * 0.33
     
     # Anchor prediction to actual satellite-measured baseline
     lst_after = ward.baseline_lst + delta
