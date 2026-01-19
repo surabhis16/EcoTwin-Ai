@@ -439,10 +439,37 @@ export default function DashboardPage() {
                 >
                   Clear Simulation
                 </Button>
-                <Button className="flex-1 bg-primary">
-                  <ArrowRight className="h-4 w-4 mr-2" />
-                  Export Results
-                </Button>
+                <Button
+                className="flex-1 bg-primary"
+                onClick={async () => {
+                if (!simulationData) return;
+
+                const response = await fetch("http://localhost:8000/api/export/pdf", {
+                method: "POST",
+                headers: {
+                "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                generatedAt: new Date().toISOString(),
+                viewMode,
+                comparisonMode,
+                simulationData
+              })
+              });
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `EcoTwin_Report_${simulationData.wardName}.pdf`;
+    a.click();
+  }}
+>
+  <ArrowRight className="h-4 w-4 mr-2" />
+  Export Results
+</Button>
+
               </div>
             </Card>
           )}
