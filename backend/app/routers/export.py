@@ -16,7 +16,7 @@ def export_pdf(payload: dict):
     # Create temp PDF file
     temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
 
-    # PDF document with metadata (FIXES "Untitled")
+    # PDF document with metadata 
     doc = SimpleDocTemplate(
         temp_file.name,
         pagesize=A4,
@@ -36,7 +36,7 @@ def export_pdf(payload: dict):
             fontSize=20,
             spaceAfter=20,
             leading=24,
-            alignment=1  # Center
+            alignment=1  
         )
     )
 
@@ -62,14 +62,14 @@ def export_pdf(payload: dict):
 
     story = []
 
-    # ---------- TITLE ----------
+    # title
     story.append(Paragraph("EcoTwin-AI Sustainability Report", styles["ReportTitle"]))
     story.append(Paragraph(
         f"Generated on {datetime.now().strftime('%d %B %Y, %H:%M')}",
         styles["Body"]
     ))
 
-    # ---------- CONTEXT ----------
+    # context
     story.append(Paragraph("Study Area & Intervention Overview", styles["SectionHeader"]))
 
     overview_text = (
@@ -82,7 +82,7 @@ def export_pdf(payload: dict):
 
     story.append(Paragraph(overview_text, styles["Body"]))
 
-    # ---------- THERMAL IMPACT ----------
+    # thermal impact
     story.append(Paragraph("Thermal Impact Assessment", styles["SectionHeader"]))
 
     thermal_text = (
@@ -95,7 +95,7 @@ def export_pdf(payload: dict):
 
     story.append(Paragraph(thermal_text, styles["Body"]))
 
-    # ---------- VEGETATION & RISK ----------
+    # vegetation and risk
     story.append(Paragraph("Vegetation Health & Risk Evaluation", styles["SectionHeader"]))
 
     vegetation_text = (
@@ -110,7 +110,7 @@ def export_pdf(payload: dict):
 
     story.append(Paragraph(vegetation_text, styles["Body"]))
 
-    # ---------- CARBON IMPACT ----------
+    # carbon impact
     story.append(Paragraph("Carbon Offset & Environmental Benefits", styles["SectionHeader"]))
 
     carbon_text = (
@@ -122,7 +122,7 @@ def export_pdf(payload: dict):
 
     story.append(Paragraph(carbon_text, styles["Body"]))
 
-    # ---------- MATERIAL INTERVENTION ----------
+    # material intervention
     if data.get("selectedMaterial"):
         story.append(Paragraph("Material-Based Intervention Impact", styles["SectionHeader"]))
 
@@ -137,7 +137,7 @@ def export_pdf(payload: dict):
 
         story.append(Paragraph(material_text, styles["Body"]))
 
-    # ---------- BUILD PDF ----------
+    # build pdf
     doc.build(story)
 
     return FileResponse(
