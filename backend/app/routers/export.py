@@ -14,21 +14,19 @@ router = APIRouter(prefix="/api/export", tags=["Export"])
 def export_pdf(payload: dict):
     data = payload["simulationData"]
 
-    # --------------------------------------------------
-    # FEASIBILITY VALUES (MATCH FRONTEND LOGIC)
-    # --------------------------------------------------
+    # feasibilty vals
     temperature_reduction = data.get("temperatureReduction", 0)
     co2_offset = data.get("co2Offset", 0)
     intensity = data.get("intensity", 0)
     selected_material = data.get("selectedMaterial")
 
-    # Energy efficiency (%)
+    # energy efficiency (%)
     energy_efficiency = round(temperature_reduction * 7.5, 1)
 
-    # Pollution control (vehicle equivalent)
+    # pollution control (vehicle equivalent)
     pollution_control = math.floor(co2_offset / 4.6) if co2_offset else 0
 
-    # Implementation cost (₹ Cr)
+    # implementation cost (₹ Cr)
     price_per_sqm = (
         (selected_material.get("price_inr_per_m3", 500) / 10)
         if selected_material else 450
@@ -42,9 +40,7 @@ def export_pdf(payload: dict):
         (area_m2 * coverage_percent * price_per_sqm) / 10_000_000, 2
     )
 
-    # --------------------------------------------------
-    # PDF SETUP
-    # --------------------------------------------------
+    # pdf setup
     temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
 
     doc = SimpleDocTemplate(
@@ -92,18 +88,14 @@ def export_pdf(payload: dict):
 
     story = []
 
-    # --------------------------------------------------
     # title
-    # --------------------------------------------------
     story.append(Paragraph("EcoTwin-AI Sustainability Report", styles["ReportTitle"]))
     story.append(Paragraph(
         f"Generated on {datetime.now().strftime('%d %B %Y, %H:%M')}",
         styles["Body"]
     ))
 
-    # --------------------------------------------------
     # context
-    # --------------------------------------------------
     story.append(Paragraph("Study Area & Intervention Overview", styles["SectionHeader"]))
 
     overview_text = (
@@ -116,9 +108,7 @@ def export_pdf(payload: dict):
 
     story.append(Paragraph(overview_text, styles["Body"]))
 
-    # --------------------------------------------------
     # thermal impact
-    # --------------------------------------------------
     story.append(Paragraph("Thermal Impact Assessment", styles["SectionHeader"]))
 
     thermal_text = (
@@ -131,9 +121,7 @@ def export_pdf(payload: dict):
 
     story.append(Paragraph(thermal_text, styles["Body"]))
 
-    # --------------------------------------------------
     # vegetation and risk
-    # --------------------------------------------------
     story.append(Paragraph("Vegetation Health & Risk Evaluation", styles["SectionHeader"]))
 
     vegetation_text = (
@@ -148,9 +136,7 @@ def export_pdf(payload: dict):
 
     story.append(Paragraph(vegetation_text, styles["Body"]))
 
-    # --------------------------------------------------
     # carbon impact
-    # --------------------------------------------------
     story.append(Paragraph("Carbon Offset & Environmental Benefits", styles["SectionHeader"]))
 
     carbon_text = (
@@ -162,9 +148,7 @@ def export_pdf(payload: dict):
 
     story.append(Paragraph(carbon_text, styles["Body"]))
 
-    # --------------------------------------------------
     # material intervention
-    # --------------------------------------------------
     if data.get("selectedMaterial"):
         story.append(Paragraph("Material-Based Intervention Impact", styles["SectionHeader"]))
 
@@ -179,9 +163,7 @@ def export_pdf(payload: dict):
 
         story.append(Paragraph(material_text, styles["Body"]))
 
-    # --------------------------------------------------
-    # FEASIBILITY ANALYSIS (ADDED)
-    # --------------------------------------------------
+    # feasibility analysis
     story.append(Paragraph("Feasibility Analysis", styles["SectionHeader"]))
 
     story.append(Paragraph(
@@ -205,9 +187,7 @@ def export_pdf(payload: dict):
         styles["Body"]
     ))
 
-    # --------------------------------------------------
-    # STRATEGIC BENEFITS (ADDED)
-    # --------------------------------------------------
+    # strategic benefits
     story.append(Paragraph("Strategic & Policy-Level Benefits", styles["SectionHeader"]))
 
     story.append(Paragraph(
@@ -220,9 +200,7 @@ def export_pdf(payload: dict):
         styles["Body"]
     ))
 
-    # --------------------------------------------------
     # build pdf
-    # --------------------------------------------------
     doc.build(story)
 
     return FileResponse(
