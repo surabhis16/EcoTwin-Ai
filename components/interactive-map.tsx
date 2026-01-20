@@ -5,6 +5,14 @@ import { Button } from "@/components/ui/button"
 import { MapPin, Loader2, AlertCircle, Maximize2, Minimize2 } from "lucide-react"
 import { useState, useEffect, useRef } from "react"
 
+//AQI Color helper
+const getAQIColor = (aqi: number, Cesium: any) => {
+  if (aqi <= 50) return Cesium.Color.fromCssColorString("#22c55e")   // Good
+  if (aqi <= 100) return Cesium.Color.fromCssColorString("#facc15") // Moderate
+  if (aqi <= 200) return Cesium.Color.fromCssColorString("#f97316") // Poor
+  return Cesium.Color.fromCssColorString("#dc2626")                 // Severe
+}
+
 interface InteractiveMapProps {
   viewMode: "baseline" | "simulated"
   simulationActive: boolean
@@ -18,6 +26,7 @@ interface WardBaseline {
   albedo?: number
   lon: number
   lat: number
+  aqi?: number 
 }
 
 export function InteractiveMap({ viewMode, simulationActive, simulationData, comparisonMode }: InteractiveMapProps) {
@@ -35,25 +44,52 @@ export function InteractiveMap({ viewMode, simulationActive, simulationData, com
   const initializedRef = useRef(false)
 
   // Fetch ward data
+  // Fetch ward data, metadata, AND AQI
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true)
 
-        // Fetch baselines and metadata in parallel
-        const [baselinesRes, metadataRes] = await Promise.all([
+        // 1. Fetch baselines, metadata, and AQI in parallel
+        // Note: Replace '/api/uhi/ward-aqi' with your actual endpoint for the AQI data shown in the screenshot
+        const [baselinesRes, metadataRes, aqiRes] = await Promise.all([
           fetch('http://localhost:8000/api/uhi/all-ward-baselines'),
-          fetch('http://localhost:8000/api/uhi/wards-metadata')
+          fetch('http://localhost:8000/api/uhi/wards-metadata'),
+          fetch('http://localhost:8000/api/uhi/all-ward-baselines')
         ])
 
-        if (!baselinesRes.ok || !metadataRes.ok) {
+        if (!baselinesRes.ok || !metadataRes.ok || !aqiRes.ok) {
           throw new Error('Failed to fetch ward data')
         }
 
         const baselines = await baselinesRes.json()
         const metadata = await metadataRes.json()
+        const aqiData = await aqiRes.json()
 
-        setWardsData(baselines)
+        // 2. Create a lookup map for AQI data based on ward_number
+        // (Assuming aqiData is an array of objects like the screenshot: { ward_number: 94, aqi: 47.12, ... })
+        const aqiMap: Record<number, number> = {}
+        if (Array.isArray(aqiData)) {
+            aqiData.forEach((row: any) => {
+                aqiMap[row.ward_number] = row.aqi
+            })
+        }
+
+        // 3. Merge AQI into the existing baselines data
+        const mergedData: Record<number, WardBaseline> = { ...baselines }
+        
+        Object.keys(mergedData).forEach((key) => {
+            const wardId = parseInt(key)
+            // If we have an AQI value for this ward, add it to the data object
+            if (aqiMap[wardId] !== undefined) {
+                mergedData[wardId] = {
+                    ...mergedData[wardId],
+                    aqi: aqiMap[wardId]
+                }
+            }
+        })
+
+        setWardsData(mergedData)
         setWardsMetadata(metadata)
         setError(null)
       } catch (err) {
@@ -158,39 +194,45 @@ export function InteractiveMap({ viewMode, simulationActive, simulationData, com
     wardEntitiesRef.current = []
 
     // Get color based on layer and data
+    // Get color based on layer and data
     const getColor = (wardNum: number, data: WardBaseline) => {
       const isSimulated = simulationActive && simulationData && simulationData.wardId === wardNum;
+      
+      // Handle Pollution Layer
+      if (activeLayer === "pollution") {
+        const aqi = data.aqi !== undefined ? Number(data.aqi) : null
+        if (aqi !== null && !isNaN(aqi)) {
+          return getAQIColor(aqi, Cesium)
+        }
+        // Fallback if AQI data is missing for this specific ward
+        return Cesium.Color.fromCssColorString('#94a3b8') 
+      }
 
+      // Handle Heat Layer
       if (activeLayer === "heat") {
         let temp = data.lst;
         if (viewMode === "simulated" && isSimulated) {
           temp = simulationData.lstAfter;
         }
-
-        // 1. Extreme: Dark Red (Use Albedo as an intensifier if available)
         if (temp >= 45) return Cesium.Color.fromCssColorString('#7f1d1d');
-
-        // 2. High: Bright Red
         if (temp >= 40) return Cesium.Color.fromCssColorString('#DC2626');
-
-        // 3. Moderate: Amber/Orange 
         if (temp >= 32) return Cesium.Color.fromCssColorString('#F59E0B');
-
-        // 4. Low: Emerald Green
         return Cesium.Color.fromCssColorString('#059669');
-
-      } else if (activeLayer === "green") {
+      } 
+      
+      // Handle Green Layer
+      if (activeLayer === "green") {
         let ndvi = data.ndvi;
         if (viewMode === "simulated" && isSimulated) {
           ndvi = simulationData.ndviAfter;
         }
-
-        // NDVI specific to Urban Bangalore (Urban vegetation rarely hits 0.8)
-        if (ndvi >= 0.5) return Cesium.Color.fromCssColorString('#059669'); // Dense (Emerald)
-        if (ndvi >= 0.3) return Cesium.Color.fromCssColorString('#10b981'); // Moderate (Light Green)
-        if (ndvi >= 0.1) return Cesium.Color.fromCssColorString('#fbbf24'); // Sparse (Yellow)
-        return Cesium.Color.fromCssColorString('#dc2626'); // Barren (Red)
+        if (ndvi >= 0.5) return Cesium.Color.fromCssColorString('#059669');
+        if (ndvi >= 0.3) return Cesium.Color.fromCssColorString('#10b981');
+        if (ndvi >= 0.1) return Cesium.Color.fromCssColorString('#fbbf24');
+        return Cesium.Color.fromCssColorString('#dc2626');
       }
+
+      // Default fallback
       return Cesium.Color.fromCssColorString('#94a3b8');
     }
 
@@ -234,6 +276,24 @@ export function InteractiveMap({ viewMode, simulationActive, simulationData, com
           outlineWidth: isSimulated ? 3 : 1,
         },
         description: `
+          
+
+
+          ${activeLayer === "pollution" && data.aqi != null ? `
+          <tr style="border-bottom: 1px solid #e5e7eb;">
+          <td style="padding: 6px 0; color: #666;">AQI:</td>
+          <td style="padding: 6px 0; font-weight: 600; text-align: right;">
+           <span style="color: ${
+               data.aqi >= 200 ? '#dc2626' :
+              data.aqi >= 100 ? '#f97316' :
+              data.aqi >= 50 ? '#facc15' : '#22c55e'
+            };">
+            ${data.aqi}
+          </span>
+          </td>
+          </tr>
+          ` : ''}
+
           <div style="font-family: sans-serif; padding: 12px; max-width: 320px;">
             <h3 style="color: #059669; margin: 0 0 12px 0; font-size: 16px;">
               ${wardName}
@@ -346,7 +406,16 @@ export function InteractiveMap({ viewMode, simulationActive, simulationData, com
   }
 
   const getLegendItems = () => {
-    if (activeLayer === "heat") {
+    if (activeLayer === "pollution") {
+      return [
+          { color: '#22c55e', label: 'Good (≤50)' },
+          { color: '#facc15', label: 'Moderate (51–100)' },
+          { color: '#f97316', label: 'Poor (101–200)' },
+          { color: '#dc2626', label: 'Severe (>200)' },
+          ]
+      }
+
+    else if (activeLayer === "heat") {
       return [
         { color: '#7f1d1d', label: 'Extreme (≥45°C)' },
         { color: '#DC2626', label: 'High (40-45°C)' },
@@ -451,13 +520,16 @@ export function InteractiveMap({ viewMode, simulationActive, simulationData, com
             >
               Green Cover
             </Button>
+            
             <Button
-              variant="outline"
-              size="sm"
-              disabled
+             variant={activeLayer === "pollution" ? "default" : "outline"}
+            size="sm"
+            onClick={() => setActiveLayer("pollution")}
+            disabled={loading}
+            className={activeLayer === "pollution" ? 'bg-purple-600 hover:bg-purple-700' : ''}
             >
-              Air Quality (Upcoming)
-            </Button>
+            Air Quality
+          </Button> 
           </div>
 
           {simulationActive && simulationData && (
