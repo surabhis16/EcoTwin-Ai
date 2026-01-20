@@ -77,7 +77,6 @@ export default function DashboardPage() {
 
   const secondaryMetrics = simulationData ? calculateSecondaryMetrics(simulationData) : null
 
-  // --- HANDLERS ---
   const handleSimulate = async (incomingData: any) => {
     try {
       const isFromEngine = incomingData.hasOwnProperty('temperatureReduction') || incomingData.hasOwnProperty('co2Offset');
@@ -291,7 +290,7 @@ export default function DashboardPage() {
 
         <div className="grid gap-6 lg:grid-cols-2">
 
-          {/* Top Section: Input Map & Engine */}
+          {/* Input Map & Engine */}
           <div className="lg:col-span-1 min-h-[500px] flex flex-col">
             <Visualization3D onWardSelect={handleWardSelection} />
           </div>
@@ -300,10 +299,10 @@ export default function DashboardPage() {
             <PolicySimulationEngine onSimulate={handleSimulate} />
           </div>
 
-          {/* Results Area Wrapper: This contains the Impact Card, Map, and Feasibility */}
+          {/* Results Area */}
           <div className="lg:col-span-2 grid grid-cols-1 lg:grid-cols-2 gap-6 animate-in fade-in slide-in-from-bottom duration-500">
 
-            {/* 1. Impact Assessment (Spans full width when active) */}
+            {/* Impact Assessment */}
             {simulationActive && simulationData && (
               <Card className="lg:col-span-2 p-8 border-primary/20 bg-linear-to-br from-primary/5 to-emerald-500/5 shadow-lg">
                 <div className="mb-4">
@@ -411,8 +410,7 @@ export default function DashboardPage() {
               </Card>
             )}
 
-            {/* 2. Interactive Map (Left Side in Sim mode, Full width in Default mode) */}
-            {/* We keep this component MOUNTED always to prevent 'black screen' on reload */}
+            {/* Interactive Map */}
             <div className={`${simulationActive ? 'lg:col-span-1' : 'lg:col-span-2'} h-full min-h-[450px] transition-all duration-500`}>
               <InteractiveMap
                 viewMode={viewMode}
@@ -422,7 +420,7 @@ export default function DashboardPage() {
               />
             </div>
 
-            {/* 3. Feasibility Card (Right Side, appears only when active) */}
+            {/* Feasibility Card */}
             {simulationActive && secondaryMetrics && (
               <Card className="lg:col-span-1 p-8 border-blue-500/20 bg-linear-to-br from-blue-950/20 to-background shadow-lg h-full">
                 <div className="mb-6">
