@@ -1,3 +1,4 @@
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional, Dict, List
@@ -6,12 +7,32 @@ from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
 import pandas as pd
 import numpy as np
+import joblib
+from sklearn.preprocessing import MinMaxScaler
+import traceback # Added for better error logging
 
 load_dotenv()
 
 router = APIRouter(prefix="/api/materials", tags=["materials"])
-engine = create_engine(os.getenv("DATABASE_URL"))
 
+# --- DATABASE CONNECTION (Optimized for Stability) ---
+engine = create_engine(
+    os.getenv("DATABASE_URL"), 
+    pool_pre_ping=True,  # Checks connection before use (Fixes "server closed connection" error)
+    pool_recycle=3600    # Refreshes connection every hour
+)
+
+# --- 1. Load the Trained ML Model ---
+model_path = "models/climate_material_model.pkl"
+rf_model = None
+
+try:
+    rf_model = joblib.load(model_path)
+    print(f"ML Model loaded successfully from {model_path}")
+except Exception as e:
+    print(f"WARNING: Could not load ML model: {e}. Recommendations will fail without it.")
+
+# --- 2. Data Structures ---
 class MaterialRequest(BaseModel):
     ward_name: str
     application: str = "Wall"
@@ -28,55 +49,48 @@ class MaterialResponse(BaseModel):
     usage_type: str
     price_inr_per_m3: float
     final_score: float
+    predicted_zone_suitability: str
+    embodied_carbon: float
     cooling_index: float
     voc_rating: float
-    transport_adjusted_carbon: float
-    thermal_conductivity: float
-    solar_reflective_index: float
-    specific_heat: float
     predicted_impact: Dict[str, float]
 
-# normalize pandas series to 0-1 range
-def normalize(series: pd.Series) -> pd.Series:
-    if series.empty:
-        return pd.Series(0.5, index=series.index)
-    
-    min_v = series.min()
-    max_v = series.max()
-    
-    if max_v == min_v:
-        return pd.Series(0.5, index=series.index)
-    
-    return (series - min_v) / (max_v - min_v)
+# --- 3. Helper Functions ---
 
-# computes a bounded Cooling Index in range [0, 1] using thermal conductivity, solar reflectance, and specific heat
-def compute_cooling_index(df: pd.DataFrame) -> pd.Series:
-    """
-    """
-    # Normalize physical properties
-    k_norm = normalize(df["thermal_conductivity"])
-    sri_norm = normalize(df["solar_reflective_index"])
-    cp_norm = normalize(df["specific_heat"])
+def prepare_features_for_model(df: pd.DataFrame) -> pd.DataFrame:
+    """ Maps Database Schema columns to the exact Feature Names used during Model Training. """
+    column_mapping = {
+        "thermal_conductivity": "Thermal_Conductivity_W_mK",
+        "specific_heat": "Specific_Heat_kJ_kgK",
+        "solar_reflective_index": "Solar_Reflective_Index",
+        "embodied_carbon": "Embodied_Carbon_kgCO2_kg",
+        "price_inr_per_m3": "Price_INR_per_m3",
+        "voc_rating": "VOC_Rating",
+        "recycled_content": "Recycled_Content_percent",
+        "source_distance_km": "Source_Distance_KM",
+        "local_availability": "Local_Availability_1_10"
+    }
     
-    # Invert thermal conductivity (cause lower is better for cooling)
-    k_inv = 1 - k_norm
+    df_mapped = df.rename(columns=column_mapping)
     
-    # Weighted composite index
-    cooling_index = (
-        0.45 * k_inv +      # 45% weight on low conductivity
-        0.35 * sri_norm +   # 35% weight on high reflectance
-        0.20 * cp_norm      # 20% weight on high heat capacity
-    )
+    required_features = [
+        'Thermal_Conductivity_W_mK', 'Specific_Heat_kJ_kgK', 'Solar_Reflective_Index', 
+        'Embodied_Carbon_kgCO2_kg', 'Price_INR_per_m3', 'VOC_Rating', 'Recycled_Content_percent',
+        'Source_Distance_KM', 'Local_Availability_1_10'
+    ]
     
-    # clip to 0-1 range for numerical safety
-    return np.clip(cooling_index, 0, 1)
+    for feature in required_features:
+        if feature not in df_mapped.columns:
+            df_mapped[feature] = 0
+            
+    return df_mapped[required_features]
 
-# get heat multiplier based on ward's baseline LST from database
-def get_heat_multiplier_from_lst(ward_name: str) -> float:
+def get_ward_heat_zone(ward_name: str) -> str:
+    """ Fetches Ward LST and maps it to Model Classes: 'High', 'Medium', 'Low'. """
     try:
         with engine.connect() as conn:
             query = text("""
-                SELECT baseline_lst, baseline_ndvi 
+                SELECT baseline_lst 
                 FROM bengaluru_wards 
                 WHERE LOWER(ward_name_en) = LOWER(:ward_name)
                 LIMIT 1
@@ -84,158 +98,181 @@ def get_heat_multiplier_from_lst(ward_name: str) -> float:
             result = conn.execute(query, {"ward_name": ward_name}).fetchone()
         
         if not result:
-            print(f"Ward '{ward_name}' not found, using default multiplier")
-            return 1.25
+            print(f"Ward '{ward_name}' not found. Defaulting to Medium.")
+            return "Medium"
         
-        baseline_lst = result.baseline_lst
+        lst = result.baseline_lst
         
-        # Calculate UHI index based on LST
-        if baseline_lst < 35:
-            uhi_index = 0.2  # Low
-        elif baseline_lst < 40:
-            uhi_index = 0.5  # Moderate
-        elif baseline_lst < 45:
-            uhi_index = 0.8  # High
-        else:
-            uhi_index = 1.0  # Extreme
-        
-        heat_multiplier = 0.75 + uhi_index
-        
-        print(f"Ward: {ward_name} | LST: {baseline_lst}°C | Heat Multiplier: {heat_multiplier}")
-        return heat_multiplier
-    
+        if lst < 35: return "Low"
+        elif lst < 40: return "Medium"
+        else: return "High" 
+            
     except Exception as e:
-        print(f"Error getting heat multiplier: {e}")
-        return 1.25
+        print(f"Error fetching ward zone: {e}")
+        return "Medium"
 
-# recommend materials based on ward LST, application, and user preferences
+def get_heat_multiplier_from_lst(ward_name: str) -> float:
+    try:
+        with engine.connect() as conn:
+            query = text("SELECT baseline_lst FROM bengaluru_wards WHERE LOWER(ward_name_en) = LOWER(:ward_name)")
+            result = conn.execute(query, {"ward_name": ward_name}).fetchone()
+        if not result: return 1.25
+        lst = result.baseline_lst
+        if lst < 35: return 0.95
+        elif lst < 40: return 1.25
+        elif lst < 45: return 1.55
+        else: return 1.75
+    except: return 1.25
+
+# --- 4. Main Recommendation Endpoint ---
 @router.post("/recommend", response_model=List[MaterialResponse])
 async def recommend_materials(request: MaterialRequest):
     try:
-        # fetch materials from database
+        if rf_model is None:
+            raise HTTPException(status_code=500, detail="ML Model is not loaded.")
+
+        # A. Fetch all materials from DB
         with engine.connect() as conn:
             query = text("SELECT * FROM materials")
             result = conn.execute(query).fetchall()
         
         if not result:
             raise HTTPException(status_code=404, detail="No materials found in database")
-        
-        # conv to DataFrame
+            
+        # Convert to DataFrame
         df = pd.DataFrame([dict(row._mapping) for row in result])
         
-        # compute cooling index from physical properties
-        # print("Computing cooling index from physical properties...")
-        df["cooling_norm"] = compute_cooling_index(df)
-        
-        # get heat multiplier from ward's baseline LST
+        # B. Get Ward Heat Zone (Target)
+        target_zone = get_ward_heat_zone(request.ward_name)
         heat_multiplier = get_heat_multiplier_from_lst(request.ward_name)
         
-        # filter by application
-        df_filtered = df[
-            df["usage_type"].str.contains(request.application, case=False, na=False) |
-            df["applications"].str.contains(request.application, case=False, na=False)
-        ].copy()
+        # C. ML PREDICTION
+        X_features = prepare_features_for_model(df)
+        df['Predicted_Zone'] = rf_model.predict(X_features)
         
-        if df_filtered.empty:
-            raise HTTPException(
-                status_code=404,
-                detail=f"No materials found for application: {request.application}"
-            )
+        # Filter: Keep materials that match the Ward's Zone
+        suitable_df = df[df['Predicted_Zone'] == target_zone].copy()
         
-        # normalize other metrics
-        df_filtered["cost_norm"] = 1 - normalize(df_filtered["price_inr_per_m3"])
-        df_filtered["health_norm"] = 1 - normalize(df_filtered["voc_rating"])
-        df_filtered["sustain_norm"] = 1 - normalize(df_filtered["transport_adjusted_carbon"])
-        
-        # calculate Final Score
+        # Apply Application Filter to exact matches first
+        if not suitable_df.empty:
+             suitable_df = suitable_df[
+                suitable_df["usage_type"].str.contains(request.application, case=False, na=False) |
+                suitable_df["applications"].str.contains(request.application, case=False, na=False)
+            ].copy()
+
+        # --- D. FALLBACK STRATEGY (The Fix for 404/500 Errors) ---
+        if suitable_df.empty:
+            print(f"⚠️ No exact match for {target_zone} & {request.application}. Switching to Fallback Strategy.")
+            
+            # Fallback 1: Ignore Heat Zone, just match Application (e.g. "Wall")
+            # We prioritize materials with high cooling index since the original goal failed
+            suitable_df = df[
+                df["usage_type"].str.contains(request.application, case=False, na=False) |
+                df["applications"].str.contains(request.application, case=False, na=False)
+            ].copy()
+            
+            # Sort fallback by cooling index so we still give good results
+            if "cooling_index" in suitable_df.columns:
+                 suitable_df = suitable_df.sort_values(by="cooling_index", ascending=False)
+
+        if suitable_df.empty:
+            print(f"⚠️ Application match failed for {request.application}. Switching to Global Top Cooling.")
+            # Fallback 2: If even application fails, just take top cooling materials generally
+            if "cooling_index" in df.columns:
+                 suitable_df = df.sort_values(by="cooling_index", ascending=False).head(10).copy()
+            else:
+                 suitable_df = df.sort_values(by="solar_reflective_index", ascending=False).head(10).copy()
+
+        # E. RANKING (User Weights)
+        scaler = MinMaxScaler()
         prefs = request.preferences
-        df_filtered["final_score"] = (
-            prefs["cost"] * df_filtered["cost_norm"] +
-            prefs["health"] * df_filtered["health_norm"] +
-            prefs["cooling"] * df_filtered["cooling_norm"] * heat_multiplier +
-            prefs["sustainability"] * df_filtered["sustain_norm"]
-        )
         
-        # sort and get top N
-        top_materials = df_filtered.nlargest(request.top_n, "final_score")
+        if not suitable_df.empty:
+            if "cost" in prefs:
+                norm_price = scaler.fit_transform(suitable_df[["price_inr_per_m3"]])
+                suitable_df["score_cost"] = 1 - norm_price
+                
+            if "sustainability" in prefs:
+                norm_carbon = scaler.fit_transform(suitable_df[["embodied_carbon"]])
+                suitable_df["score_sustain"] = 1 - norm_carbon
+                
+            if "health" in prefs:
+                norm_voc = scaler.fit_transform(suitable_df[["voc_rating"]])
+                suitable_df["score_health"] = 1 - norm_voc
+                
+            if "cooling" in prefs:
+                if "cooling_index" in suitable_df.columns:
+                     norm_cool = scaler.fit_transform(suitable_df[["cooling_index"]])
+                     suitable_df["score_cooling"] = norm_cool
+                else:
+                     norm_cool = scaler.fit_transform(suitable_df[["solar_reflective_index"]])
+                     suitable_df["score_cooling"] = norm_cool
+
+            # Calculate Final Score
+            suitable_df["final_score"] = 0
+            total_weight = sum(prefs.values())
+            if total_weight == 0: total_weight = 1
+            
+            for key in prefs:
+                col = f"score_{key}"
+                if col in suitable_df.columns:
+                    suitable_df["final_score"] += suitable_df[col] * (prefs[key] / total_weight)
         
-        # calculate predicted impact for each material
+        # F. Formatting Response
+        # Safety check: if fallback completely failed (very rare), return empty list
+        if suitable_df.empty:
+             return []
+
+        top_materials = suitable_df.sort_values(by="final_score", ascending=False).head(request.top_n)
+        
         results = []
-        for _, material in top_materials.iterrows():
-            cooling_normalized = material["cooling_norm"]  # Already 0-1
-            
-            # temperature reduction: scale 0-1 to realistic 0.5-8°C range
-            # higher heat multiplier = more benefit in hot areas
-            temp_reduction = cooling_normalized * heat_multiplier * 2.5  
-            
-            # Carbon score: transport_adjusted_carbon is in kg CO2/kg (0.13-2.025 range)
-            # Lower carbon = better material
-            carbon_value = material["transport_adjusted_carbon"]
-            max_carbon = 2.5  # Slightly above max observed value
-            carbon_score = (carbon_value / max_carbon) * 100  # 0-100 scale
-            carbon_score = min(carbon_score, 100)  # Cap at 100
-            
-            # CO2 reduction: better materials (lower carbon) give more offset
-            # Materials with low embodied carbon = high CO2 reduction potential
-            co2_reduction = (100 - carbon_score) * 2.0 + 50  # 50-250 kg/m²/yr range
-            
-            # Sustainability boost
-            sustainability_boost = material["final_score"] * 15
+        for _, row in top_materials.iterrows():
+            cool_idx = row.get("cooling_index", 0)
+            temp_reduction = (cool_idx / 2333) * heat_multiplier * 2.5
             
             results.append(MaterialResponse(
-                material_name=material["material_name"],
-                usage_type=material["usage_type"],
-                price_inr_per_m3=float(material["price_inr_per_m3"]),
-                final_score=float(material["final_score"]),
-                cooling_index=float(material["cooling_norm"]),  # normalized 0-1 value
-                voc_rating=float(material["voc_rating"]),
-                transport_adjusted_carbon=float(material["transport_adjusted_carbon"]),
-                thermal_conductivity=float(material["thermal_conductivity"]),
-                solar_reflective_index=float(material["solar_reflective_index"]),
-                specific_heat=float(material["specific_heat"]),
+                material_name=row["material_name"],
+                usage_type=row["usage_type"],
+                price_inr_per_m3=float(row["price_inr_per_m3"]),
+                final_score=round(float(row.get("final_score", 0)), 2),
+                predicted_zone_suitability=row.get("Predicted_Zone", "General"), # Fallback default
+                embodied_carbon=float(row["embodied_carbon"]),
+                cooling_index=float(row.get("cooling_index", 0)),
+                voc_rating=float(row.get("voc_rating", 0)),
                 predicted_impact={
                     "tempChange": -round(temp_reduction, 2),
-                    "co2Reduction": round(co2_reduction, 2),
-                    "sustainabilityChange": round(sustainability_boost, 2)
+                    "co2Reduction": round((1 - row.get("transport_adjusted_carbon", 1)) * 100, 2),
+                    "sustainabilityScore": round(row.get("final_score", 0) * 10, 1)
                 }
             ))
-        
-        print(f"Recommended {len(results)} materials for {request.ward_name}")
+            
         return results
-    
-    except HTTPException:
-        raise
+
     except Exception as e:
-        print(f"Error in recommend_materials: {e}")
-        import traceback
-        traceback.print_exc()
+        print("CRITICAL ERROR IN RECOMMENDATION:")
+        traceback.print_exc() # Print full error to console for debugging
         raise HTTPException(status_code=500, detail=str(e))
 
-# get list of available material applications
+# --- 5. Auxiliary Endpoints (Unchanged) ---
+
 @router.get("/applications")
 async def get_applications():
     try:
         with engine.connect() as conn:
-            query = text("""
-                SELECT DISTINCT usage_type, applications 
-                FROM materials
-            """)
+            query = text("SELECT DISTINCT usage_type, applications FROM materials")
             result = conn.execute(query).fetchall()
         
         applications = set()
         for row in result:
-            if row.usage_type:
-                applications.add(row.usage_type)
+            if row.usage_type: applications.add(row.usage_type)
             if row.applications:
                 apps = row.applications.split(",")
                 applications.update([app.strip() for app in apps])
         
         return {"applications": sorted(list(applications))}
-    
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# get heat info for a specific ward
 @router.get("/ward-heat-info/{ward_name}")
 async def get_ward_heat_info(ward_name: str):
     try:
@@ -252,15 +289,10 @@ async def get_ward_heat_info(ward_name: str):
             raise HTTPException(status_code=404, detail=f"Ward '{ward_name}' not found")
         
         lst = result.baseline_lst
-        
-        if lst < 35:
-            heat_zone = "Low"
-        elif lst < 40:
-            heat_zone = "Moderate"
-        elif lst < 45:
-            heat_zone = "High"
-        else:
-            heat_zone = "Extreme"
+        if lst < 35: heat_zone = "Low"
+        elif lst < 40: heat_zone = "Moderate"
+        elif lst < 45: heat_zone = "High"
+        else: heat_zone = "Extreme"
         
         heat_multiplier = get_heat_multiplier_from_lst(ward_name)
         
@@ -273,46 +305,27 @@ async def get_ward_heat_info(ward_name: str):
             "heat_multiplier": round(heat_multiplier, 2),
             "recommendation": f"Materials with high cooling properties prioritized for {heat_zone.lower()} heat zones"
         }
-    
-    except HTTPException:
-        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# debug endpoint to verify cooling index calculation; shows sample materials with their computed cooling indices
 @router.get("/debug-cooling-calculation")
 async def debug_cooling_calculation():
     try:
         with engine.connect() as conn:
             query = text("""
-                SELECT 
-                    material_name,
-                    thermal_conductivity,
-                    solar_reflective_index,
-                    specific_heat
-                FROM materials
-                LIMIT 10
+                SELECT material_name, thermal_conductivity, solar_reflective_index, specific_heat, cooling_index
+                FROM materials LIMIT 10
             """)
             result = conn.execute(query).fetchall()
         
-        df = pd.DataFrame([dict(row._mapping) for row in result])
-        df["cooling_index_computed"] = compute_cooling_index(df)
-        
         debug_results = []
-        for _, row in df.iterrows():
+        for row in result:
             debug_results.append({
-                "material": row["material_name"],
-                "thermal_conductivity": round(row["thermal_conductivity"], 3),
-                "solar_reflective_index": round(row["solar_reflective_index"], 2),
-                "specific_heat": round(row["specific_heat"], 3),
-                "cooling_index": round(row["cooling_index_computed"], 3)
+                "material": row.material_name,
+                "cooling_index_db": row.cooling_index,
+                "thermal_conductivity": row.thermal_conductivity,
+                "solar_reflective_index": row.solar_reflective_index
             })
-        
-        return {
-            "note": "Cooling index computed from physical properties (0-1 scale)",
-            "formula": "45% × (1 - thermal_conductivity_norm) + 35% × solar_reflective_norm + 20% × specific_heat_norm",
-            "samples": debug_results
-        }
-    
+        return {"samples": debug_results}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -1,12 +1,14 @@
+
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Layers, MapPin, TrendingDown, TrendingUp, Leaf, Loader2, RefreshCw } from "lucide-react"
 import { useState, useEffect } from "react"
 
+// --- FIX 1: Updated Interface to match Python Backend Keys ---
 interface MaterialImpact {
   tempChange: number
   co2Reduction: number
-  sustainabilityChange: number
+  sustainabilityScore: number // Changed from 'sustainabilityChange'
 }
 
 interface Material {
@@ -16,7 +18,7 @@ interface Material {
   final_score: number
   cooling_index: number
   voc_rating: number
-  transport_adjusted_carbon: number
+  embodied_carbon: number // Changed from 'transport_adjusted_carbon'
   predicted_impact: MaterialImpact
 }
 
@@ -36,12 +38,10 @@ export default function MaterialRecommender({ selectedZone, onMaterialApplied }:
   const [application, setApplication] = useState("Wall")
   const [availableApplications, setAvailableApplications] = useState<string[]>([])
 
-  // fetch available applications on mount
   useEffect(() => {
     fetchApplications()
   }, [])
 
-  // fetch materials when zone changes
   useEffect(() => {
     if (selectedZone) {
       fetchMaterials()
@@ -66,7 +66,6 @@ export default function MaterialRecommender({ selectedZone, onMaterialApplied }:
     setError(null)
 
     try {
-      // extract ward name from selectedZone (format: "Ward Name (X.XX km²)")
       const wardName = selectedZone.split(" (")[0].trim()
 
       const response = await fetch(`${API_BASE_URL}/api/materials/recommend`, {
@@ -105,9 +104,7 @@ export default function MaterialRecommender({ selectedZone, onMaterialApplied }:
     setAppliedMaterial(material)
     setShowImpact(true)
 
-    // notify parent component that material was applied
     if (onMaterialApplied) {
-      // create simulation data structure for visualization
       const materialSimulationData = {
         wardName: selectedZone,
         area: selectedZone,
@@ -122,12 +119,11 @@ export default function MaterialRecommender({ selectedZone, onMaterialApplied }:
           tempReduction: Math.abs(material.predicted_impact.tempChange),
           co2Reduction: material.predicted_impact.co2Reduction
         },
-        // add default coordinates (will be overridden if available)
         coordinates: { lon: 77.5946, lat: 12.9716 }
       }
-
-      onMaterialApplied(materialSimulationData as any)
-
+      
+      // @ts-ignore
+      onMaterialApplied(materialSimulationData)
     }
 
     setTimeout(() => setShowImpact(false), 5000)
@@ -141,27 +137,18 @@ export default function MaterialRecommender({ selectedZone, onMaterialApplied }:
     return "C"
   }
 
-  const getCostRating = (price: number): string => {
-    // adjusted thresholds for Indian construction materials
-    if (price < 3000) return "₹"      // low cost
-    if (price < 8000) return "₹₹"     // medium cost
-    return "₹₹₹"                       // high cost
-  }
-
   const formatHealth = (voc: number): string => {
-    // VOC Rating: Lower is better (0 = best, 100 = worst)
-    // Health score: Higher is better (100 = best, 0 = worst)
-    const healthScore = Math.max(0, 100 - voc)
+    const healthScore = Math.max(0, 100 - (voc || 0)) // Safety check
     return `${healthScore.toFixed(0)}%`
   }
 
   const formatCooling = (coolingIndex: number): string => {
-    // C.I - normalized, convert to 0-10 display scale
-    return (coolingIndex * 10).toFixed(1)
+    return ((coolingIndex || 0) * 10).toFixed(1) // Safety check
   }
 
-  const formatCarbon = (carbon: number): string => {
-    // Transport adjusted carbon in kg CO2/kg
+  // --- FIX 2: Added Safety Check for undefined values ---
+  const formatCarbon = (carbon: number | undefined): string => {
+    if (carbon === undefined || carbon === null) return "N/A"
     return carbon.toFixed(2)
   }
 
@@ -177,19 +164,31 @@ export default function MaterialRecommender({ selectedZone, onMaterialApplied }:
         <Layers className="h-6 w-6 text-primary" />
       </div>
 
-      {/* Application Selector */}
       {selectedZone && (
         <div className="mb-4 flex gap-2">
-          {["Wall", "Roof", "Flooring"].map((app) => (
-            <Button
-              key={app}
-              size="sm"
-              variant={application === app ? "default" : "outline"}
-              onClick={() => setApplication(app)}
-            >
-              {app}
-            </Button>
-          ))}
+          {availableApplications.length > 0 ? availableApplications.map((app) => (
+             <Button
+             key={app}
+             size="sm"
+             variant={application === app ? "default" : "outline"}
+             onClick={() => setApplication(app)}
+           >
+             {app}
+           </Button>
+          )) : (
+            // Fallback if list is empty
+            ["Wall", "Roof", "Flooring"].map((app) => (
+              <Button
+                key={app}
+                size="sm"
+                variant={application === app ? "default" : "outline"}
+                onClick={() => setApplication(app)}
+              >
+                {app}
+              </Button>
+            ))
+          )}
+          
           {selectedZone && (
             <Button
               size="sm"
@@ -203,7 +202,6 @@ export default function MaterialRecommender({ selectedZone, onMaterialApplied }:
         </div>
       )}
 
-      {/* Impact Banner */}
       {showImpact && appliedMaterial && (
         <div className="mb-4 p-4 rounded-lg bg-primary/10 border-2 border-primary/50 animate-in fade-in slide-in-from-top-2">
           <div className="flex items-center gap-2 mb-3">
@@ -242,28 +240,26 @@ export default function MaterialRecommender({ selectedZone, onMaterialApplied }:
                 <p className="text-xs text-muted-foreground">Score</p>
               </div>
               <p className="text-sm font-bold text-primary">
-                +{appliedMaterial.predicted_impact.sustainabilityChange.toFixed(0)}
+                {/* FIX 3: Updated to sustainabilityScore */}
+                +{appliedMaterial.predicted_impact.sustainabilityScore.toFixed(0)}
               </p>
             </div>
           </div>
         </div>
       )}
 
-      {/* Error State */}
       {error && (
         <div className="mb-4 p-4 rounded-lg bg-destructive/10 border border-destructive/50">
           <p className="text-sm text-destructive">{error}</p>
         </div>
       )}
 
-      {/* Loading State */}
       {loading && (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
       )}
 
-      {/* Materials List */}
       {!loading && materials.length > 0 && (
         <div className="space-y-3">
           {materials.map((material, index) => (
@@ -294,7 +290,8 @@ export default function MaterialRecommender({ selectedZone, onMaterialApplied }:
                 </div>
                 <div className="p-2 rounded bg-background/50">
                   <p className="text-muted-foreground mb-1">Carbon</p>
-                  <p className="font-bold">{formatCarbon(material.transport_adjusted_carbon)}</p>
+                  {/* FIX 4: Using embodied_carbon */}
+                  <p className="font-bold">{formatCarbon(material.embodied_carbon)}</p>
                 </div>
               </div>
 
@@ -325,7 +322,6 @@ export default function MaterialRecommender({ selectedZone, onMaterialApplied }:
         </div>
       )}
 
-      {/* Empty State */}
       {!loading && !selectedZone && (
         <div className="text-center py-12">
           <MapPin className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
