@@ -1,3 +1,4 @@
+
 "use client"
 
 import { DashboardNav } from "@/components/dashboard-nav"
@@ -5,7 +6,6 @@ import { InteractiveMap } from "@/components/interactive-map"
 import { SentimentAnalysis } from "@/components/sentiment-analysis"
 import MaterialRecommender from "@/components/material-recommender"
 import PolicySimulationEngine from "@/components/policy-simulation-engine"
-import { PredictedOutcomes } from "@/components/predicted-outcomes"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -14,46 +14,36 @@ import {
   TrendingDown,
   Thermometer,
   MapPin,
-  ArrowRight
+  ArrowRight,
+  Zap,
+  IndianRupee,
+  Car,
+  Activity
 } from "lucide-react"
 import { useState } from "react"
 import dynamic from "next/dynamic"
 import { updateUHIForSimulation } from "@/components/visualization-3d"
 
+// --- TYPES ---
 interface SimulationData {
   wardId: number
   wardName: string
   area: string
   intervention: string
   intensity: number
-
-  // temperature metrics
   temperatureReduction: number
   lstBefore: number
   lstAfter: number
-  baseCooling?: number // cooling from vegetation
-  materialCooling?: number // cooling from materials
-
-  // NDVI metrics
+  baseCooling?: number
+  materialCooling?: number
   ndviBefore: number
   ndviAfter: number
-
-  // Risk assessment
   risk_before: string
   risk_after: string
-
-  // Impact metrics
-  co2Offset: number // Annual (Trees)
-  materialCO2?: number // One-time (Materials)
-
-  // Material Info
+  co2Offset: number
+  materialCO2?: number
   selectedMaterial?: any
-
-  // Location
-  coordinates?: {
-    lon: number
-    lat: number
-  }
+  coordinates?: { lon: number; lat: number }
 }
 
 const Visualization3D = dynamic(
@@ -72,83 +62,56 @@ export default function DashboardPage() {
   const [selectedSentimentWard, setSelectedSentimentWard] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const handleSentimentZoneClick = async (wardNumber: number) => {
-    setError(null)
+  // --- LOGIC: SECONDARY METRICS ---
+  const calculateSecondaryMetrics = (data: SimulationData) => {
+    const energySavingsPercent = (data.temperatureReduction * 7.5).toFixed(1)
+    const carEquivalent = Math.floor(data.co2Offset / 4.6)
+    const pricePerSqm = data.selectedMaterial ? (data.selectedMaterial.price_inr_per_m3 / 10 || 500) : 450
+    const wardAreaSqKm = 2.5 
+    const areaM2 = wardAreaSqKm * 1000000 
+    const coveragePercent = data.intensity / 100
+    const estimatedCostCr = (areaM2 * coveragePercent * pricePerSqm) / 10000000 
 
-    try {
-      const baselineRes = await fetch(`http://localhost:8000/api/uhi/ward-baseline/${wardNumber}`)
-      if (!baselineRes.ok) throw new Error(`Failed to fetch ward baseline`)
-      const baselineData = await baselineRes.json()
-
-      const wardData = {
-        ...baselineData,
-        wardId: baselineData.ward_id,
-        ward_number: baselineData.ward_id,
-        name: baselineData.ward_name,
-        lst_before: baselineData.lst_before || baselineData.baseline_lst,
-        baseline_lst: baselineData.baseline_lst,
-        ndvi_before: baselineData.ndvi_before || baselineData.baseline_ndvi,
-        baseline_ndvi: baselineData.baseline_ndvi,
-        coordinates: baselineData.coordinates
-      }
-
-      setSelectedWardData(wardData)
-      setSelectedSentimentWard(wardNumber)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to fetch ward data")
-    }
+    return { energySavingsPercent, carEquivalent, estimatedCostCr: estimatedCostCr.toFixed(2) }
   }
 
-  const handleSimulate = async (incomingData: any) => {
-    console.log("Receiving simulation data:", incomingData)
+  const secondaryMetrics = simulationData ? calculateSecondaryMetrics(simulationData) : null
 
+  // --- HANDLERS ---
+  const handleSimulate = async (incomingData: any) => {
     try {
       const isFromEngine = incomingData.hasOwnProperty('temperatureReduction') || incomingData.hasOwnProperty('co2Offset');
-
       let normalized: SimulationData;
 
       if (isFromEngine) {
         normalized = {
           wardId: incomingData.wardId,
           wardName: incomingData.wardName,
-          area: `${incomingData.wardName} (${(incomingData.area_sqkm || 1).toFixed(2)} km²)`,
+          area: `${incomingData.wardName}`,
           intervention: incomingData.intervention,
           intensity: incomingData.intensity,
-
           temperatureReduction: incomingData.temperatureReduction,
           lstBefore: incomingData.lstBefore,
           lstAfter: incomingData.lstAfter || (incomingData.lstBefore - incomingData.temperatureReduction),
-
           baseCooling: incomingData.baseCooling || 0,
           materialCooling: incomingData.materialCooling || 0,
-
           ndviBefore: incomingData.ndviBefore,
           ndviAfter: incomingData.ndviAfter,
-
           risk_before: incomingData.risk_before,
           risk_after: incomingData.risk_after,
-
           co2Offset: incomingData.co2Offset,
           materialCO2: incomingData.materialCO2 || 0,
-
           selectedMaterial: incomingData.selectedMaterial,
           coordinates: incomingData.coordinates
         };
-
       } else {
-        console.log("running fallback simulation logic");
-
         const wardId = incomingData.ward_id || incomingData.wardId;
-        const defaultIntensity = 0.15;
-
         const simRes = await fetch('http://localhost:8000/api/uhi/simulate-ward', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ward_id: wardId, intensity: defaultIntensity })
+          body: JSON.stringify({ ward_id: wardId, intensity: 0.15 })
         });
-
         const simResult = await simRes.json();
-
         const cooling = simResult.cooling || 0;
         const lstB = simResult.lst_before || 35;
 
@@ -169,8 +132,6 @@ export default function DashboardPage() {
           coordinates: simResult.coordinates
         };
       }
-
-      console.log("Final Normalized Data for Dashboard:", normalized)
 
       setSimulationData(normalized)
       setSelectedZone(normalized.area)
@@ -208,58 +169,29 @@ export default function DashboardPage() {
   }
 
   const handleMaterialApplied = (materialData: any) => {
-    console.log("Material applied:", materialData)
-
     setMaterialApplied(true)
-
     if (simulationActive && simulationData) {
-      const updatedSimulation: SimulationData = {
+       const updatedSimulation: SimulationData = {
         ...simulationData,
         selectedMaterial: materialData.selectedMaterial,
         temperatureReduction: simulationData.temperatureReduction + materialData.temperatureReduction,
         lstAfter: simulationData.lstAfter - materialData.temperatureReduction,
         materialCO2: (simulationData.materialCO2 || 0) + (materialData.co2Offset || 0),
         materialCooling: materialData.temperatureReduction,
-        baseCooling: simulationData.baseCooling || simulationData.temperatureReduction,
       }
-
-      console.log("Updated simulation with material:", updatedSimulation)
-
       setSimulationData(updatedSimulation)
       updateUHIForSimulation(updatedSimulation)
-
     } else {
-      const coords = selectedWardData?.coordinates || { lon: 77.5946, lat: 12.9716 }
-
-      const newSimulation: SimulationData = {
-        wardId: selectedWardData?.ward_id || 0,
-        wardName: selectedWardData?.ward_name || materialData.wardName || "Selected Area",
-        area: selectedWardData?.ward_name || materialData.area || "Selected Area",
-        intervention: "material application",
-        intensity: 100,
-        temperatureReduction: materialData.temperatureReduction,
-        lstBefore: selectedWardData?.lst_before || selectedWardData?.baseline_lst || 35,
-        lstAfter: (selectedWardData?.lst_before || selectedWardData?.baseline_lst || 35) - materialData.temperatureReduction,
-        ndviBefore: selectedWardData?.ndvi_before || selectedWardData?.baseline_ndvi || 0.1,
-        ndviAfter: selectedWardData?.ndvi_before || selectedWardData?.baseline_ndvi || 0.1,
-        risk_before: selectedWardData?.risk_before || "Unknown",
-        risk_after: "Improved",
-        co2Offset: 0,
-        materialCO2: materialData.co2Offset || 0,
-        selectedMaterial: materialData.selectedMaterial,
-        baseCooling: 0,
-        materialCooling: materialData.temperatureReduction,
-        coordinates: coords
-      }
-
-      console.log("New simulation from material:", newSimulation)
-
-      setSimulationData(newSimulation)
-      setSimulationActive(true)
-      setViewMode("simulated")
-      updateUHIForSimulation(newSimulation)
+       handleSimulate({
+         ...selectedWardData, 
+         wardId: selectedWardData?.ward_id,
+         wardName: selectedWardData?.ward_name || "Zone",
+         intervention: "Material", 
+         intensity: 100,
+         temperatureReduction: materialData.temperatureReduction,
+         co2Offset: materialData.co2Offset || 0
+       })
     }
-
     setTimeout(() => setMaterialApplied(false), 5000)
   }
 
@@ -293,15 +225,9 @@ export default function DashboardPage() {
                 <p className="font-semibold text-emerald-500 flex items-center gap-2">
                   <MapPin className="h-4 w-4" />
                   Selected: {selectedWardData.ward_name || selectedWardData.name}
-                  {selectedSentimentWard && (
-                    <Badge variant="outline" className="ml-2 text-xs border-emerald-500/50">
-                      From Sentiment Analysis
-                    </Badge>
-                  )}
                 </p>
                 <p className="text-sm text-muted-foreground">
                   LST: {(selectedWardData.baseline_lst || selectedWardData.lst_before || 0).toFixed(2)}°C
-                  {selectedWardData.ndvi_before && ` | NDVI: ${selectedWardData.ndvi_before.toFixed(3)}`}
                 </p>
               </div>
               <Button onClick={() => handleSimulate(selectedWardData)} className="bg-emerald-600 hover:bg-emerald-700">
@@ -333,7 +259,7 @@ export default function DashboardPage() {
         )}
 
         {/* Mode Controls */}
-        <div className="mb-6 flex items-center justify-between bg-card/50 backdrop-blur-sm rounded-lg p-4 border">
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-4 bg-card/50 backdrop-blur-sm rounded-lg p-4 border">
           <div className="flex items-center gap-4">
             <div className="flex gap-2">
               <Button
@@ -364,99 +290,171 @@ export default function DashboardPage() {
         </div>
 
         <div className="grid gap-6 lg:grid-cols-2">
-          <Visualization3D onWardSelect={handleWardSelection} />
-          <PolicySimulationEngine onSimulate={handleSimulate} />
+          
+          {/* Top Section: Input Map & Engine */}
+          <div className="lg:col-span-1 min-h-[500px] flex flex-col">
+            <Visualization3D onWardSelect={handleWardSelection} />
+          </div>
 
-          {simulationActive && simulationData && (
-            <Card className="lg:col-span-2 p-8 border-primary/20 bg-linear-to-br from-primary/5 to-emerald-500/5">
-              <div className="mb-4">
-                <h3 className="text-xl font-bold flex items-center gap-2">
-                  <Thermometer className="h-5 w-5 text-primary" />
-                  Impact Assessment Results
-                </h3>
-                <p className="text-sm text-muted-foreground">
-                  Predicted outcomes for {simulationData.wardName}
-                </p>
-              </div>
+          <div className="lg:col-span-1 min-h-[500px] flex flex-col">
+            <PolicySimulationEngine onSimulate={handleSimulate} />
+          </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-                <div className="bg-background p-6 rounded-2xl border shadow-sm">
-                  <p className="text-xs font-bold text-muted-foreground mb-1 uppercase">Cooling Impact</p>
-                  <p className="text-4xl font-black text-emerald-500">
-                    -{simulationData.temperatureReduction.toFixed(2)}°C
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-2">
-                    Temperature reduction achieved
+          {/* Results Area Wrapper: This contains the Impact Card, Map, and Feasibility */}
+          <div className="lg:col-span-2 grid grid-cols-1 lg:grid-cols-2 gap-6 animate-in fade-in slide-in-from-bottom duration-500">
+            
+            {/* 1. Impact Assessment (Spans full width when active) */}
+            {simulationActive && simulationData && (
+              <Card className="lg:col-span-2 p-8 border-primary/20 bg-linear-to-br from-primary/5 to-emerald-500/5 shadow-lg">
+                <div className="mb-4">
+                  <h3 className="text-xl font-bold flex items-center gap-2">
+                    <Thermometer className="h-5 w-5 text-primary" />
+                    Impact Assessment Results
+                  </h3>
+                  <p className="text-sm text-muted-foreground">
+                    Predicted outcomes for {simulationData.wardName}
                   </p>
                 </div>
 
-                <div className="bg-background p-6 rounded-2xl border shadow-sm">
-                  <p className="text-xs font-bold text-muted-foreground mb-1 uppercase">Projected Temp</p>
-                  <p className="text-4xl font-black">
-                    {simulationData.lstAfter.toFixed(2)}°C
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-2">
-                    From {simulationData.lstBefore.toFixed(2)}°C baseline
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                  <div className="bg-background/80 p-6 rounded-2xl border shadow-sm">
+                    <p className="text-xs font-bold text-muted-foreground mb-1 uppercase">Cooling Impact</p>
+                    <p className="text-4xl font-black text-emerald-500">
+                      -{simulationData.temperatureReduction.toFixed(2)}°C
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Temperature reduction achieved
+                    </p>
+                  </div>
+
+                  <div className="bg-background/80 p-6 rounded-2xl border shadow-sm">
+                    <p className="text-xs font-bold text-muted-foreground mb-1 uppercase">Projected Temp</p>
+                    <p className="text-4xl font-black">
+                      {simulationData.lstAfter.toFixed(2)}°C
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      From {simulationData.lstBefore.toFixed(2)}°C baseline
+                    </p>
+                  </div>
+
+                  <div className="bg-background/80 p-6 rounded-2xl border shadow-sm">
+                    <p className="text-xs font-bold text-muted-foreground mb-1 uppercase">Carbon Offset</p>
+                    <p className="text-4xl font-black text-blue-500">
+                      {simulationData.co2Offset.toLocaleString()} <span className="text-sm">t/y</span>
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Annual CO₂ sequestration
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="bg-background/80 p-4 rounded-xl border flex justify-between items-center">
+                    <p className="text-sm font-bold text-muted-foreground">RISK STATUS</p>
+                    <p className="text-sm font-bold text-primary">
+                      {simulationData.risk_before} → {simulationData.risk_after}
+                    </p>
+                  </div>
+                  <div className="bg-background/80 p-4 rounded-xl border flex justify-between items-center">
+                    <p className="text-sm font-bold text-muted-foreground">NDVI SHIFT</p>
+                    <p className="text-sm font-bold text-emerald-500">
+                      {simulationData.ndviBefore.toFixed(3)} → {simulationData.ndviAfter.toFixed(3)}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-6 flex gap-3">
+                  <Button
+                    variant="outline"
+                    className="flex-1"
+                    onClick={() => {
+                      setSimulationActive(false);
+                      setSimulationData(null);
+                      setViewMode("baseline");
+                      setSelectedSentimentWard(null);
+                    }}
+                  >
+                    Clear Simulation
+                  </Button>
+                  <Button className="flex-1 bg-primary text-primary-foreground">
+                    <ArrowRight className="h-4 w-4 mr-2" />
+                    Export Results
+                  </Button>
+                </div>
+              </Card>
+            )}
+
+            {/* 2. Interactive Map (Left Side in Sim mode, Full width in Default mode) */}
+            {/* We keep this component MOUNTED always to prevent 'black screen' on reload */}
+            <div className={`${simulationActive ? 'lg:col-span-1' : 'lg:col-span-2'} h-full min-h-[450px] transition-all duration-500`}>
+              <InteractiveMap
+                viewMode={viewMode}
+                simulationActive={simulationActive}
+                simulationData={simulationData}
+                comparisonMode={comparisonMode}
+              />
+            </div>
+
+            {/* 3. Feasibility Card (Right Side, appears only when active) */}
+            {simulationActive && secondaryMetrics && (
+              <Card className="lg:col-span-1 p-8 border-blue-500/20 bg-linear-to-br from-blue-950/20 to-background shadow-lg h-full">
+                <div className="mb-6">
+                  <h3 className="text-xl font-bold flex items-center gap-2">
+                    <Activity className="h-5 w-5 text-blue-400" />
+                    Feasibility & Strategic Benefits
+                  </h3>
+                  <p className="text-sm text-muted-foreground">
+                    Economic and social implications
                   </p>
                 </div>
 
-                <div className="bg-background p-6 rounded-2xl border shadow-sm">
-                  <p className="text-xs font-bold text-muted-foreground mb-1 uppercase">Carbon Offset</p>
-                  <p className="text-4xl font-black text-blue-500">
-                    {simulationData.co2Offset.toLocaleString()} <span className="text-sm">t/y</span>
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-2">
-                    Annual CO₂ sequestration
-                  </p>
-                </div>
-              </div>
+                <div className="flex flex-col gap-6 h-full justify-around">
+                  {/* Energy Savings */}
+                  <div className="flex flex-col gap-2 p-5 rounded-xl bg-card/50 border">
+                    <div className="flex items-center gap-3 mb-1">
+                      <div className="h-8 w-8 rounded-full bg-yellow-500/10 flex items-center justify-center">
+                        <Zap className="h-4 w-4 text-yellow-500" />
+                      </div>
+                      <span className="text-sm font-semibold text-muted-foreground">Energy Efficiency</span>
+                    </div>
+                    <p className="text-3xl font-black text-foreground">
+                      {secondaryMetrics.energySavingsPercent}%
+                    </p>
+                    <p className="text-xs text-muted-foreground">Est. AC energy load reduction</p>
+                  </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="bg-background p-4 rounded-xl border flex justify-between items-center">
-                  <p className="text-sm font-bold text-muted-foreground">RISK STATUS</p>
-                  <p className="text-sm font-bold text-primary">
-                    {simulationData.risk_before} → {simulationData.risk_after}
-                  </p>
-                </div>
-                <div className="bg-background p-4 rounded-xl border flex justify-between items-center">
-                  <p className="text-sm font-bold text-muted-foreground">NDVI SHIFT</p>
-                  <p className="text-sm font-bold text-emerald-500">
-                    {simulationData.ndviBefore.toFixed(3)} → {simulationData.ndviAfter.toFixed(3)}
-                  </p>
-                </div>
-              </div>
+                  {/* Cost Estimate */}
+                  <div className="flex flex-col gap-2 p-5 rounded-xl bg-card/50 border">
+                    <div className="flex items-center gap-3 mb-1">
+                      <div className="h-8 w-8 rounded-full bg-green-500/10 flex items-center justify-center">
+                        <IndianRupee className="h-4 w-4 text-green-500" />
+                      </div>
+                      <span className="text-sm font-semibold text-muted-foreground">Implementation</span>
+                    </div>
+                    <p className="text-3xl font-black text-foreground">
+                      ₹{secondaryMetrics.estimatedCostCr} Cr
+                    </p>
+                    <p className="text-xs text-muted-foreground">Est. capital expenditure</p>
+                  </div>
 
-              <div className="mt-6 flex gap-3">
-                <Button
-                  variant="outline"
-                  className="flex-1"
-                  onClick={() => {
-                    setSimulationActive(false);
-                    setSimulationData(null);
-                    setViewMode("baseline");
-                    setSelectedSentimentWard(null);
-                  }}
-                >
-                  Clear Simulation
-                </Button>
-                <Button className="flex-1 bg-primary">
-                  <ArrowRight className="h-4 w-4 mr-2" />
-                  Export Results
-                </Button>
-              </div>
-            </Card>
-          )}
-
-          <InteractiveMap
-            viewMode={viewMode}
-            simulationActive={simulationActive}
-            simulationData={simulationData}
-            comparisonMode={comparisonMode}
-          />
-          <PredictedOutcomes
-            simulationActive={simulationActive}
-            simulationData={simulationData}
-          />
+                  {/* Social Impact */}
+                  <div className="flex flex-col gap-2 p-5 rounded-xl bg-card/50 border">
+                    <div className="flex items-center gap-3 mb-1">
+                      <div className="h-8 w-8 rounded-full bg-blue-500/10 flex items-center justify-center">
+                        <Car className="h-4 w-4 text-blue-500" />
+                      </div>
+                      <span className="text-sm font-semibold text-muted-foreground">Pollution Control</span>
+                    </div>
+                    <p className="text-3xl font-black text-foreground">
+                      -{secondaryMetrics.carEquivalent}
+                    </p>
+                    <p className="text-xs text-muted-foreground">Equivalent cars removed (emissions)</p>
+                  </div>
+                </div>
+              </Card>
+            )}
+            
+          </div>
 
           <div className="lg:col-span-2">
             <MaterialRecommender
