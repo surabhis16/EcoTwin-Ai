@@ -40,7 +40,6 @@ class AnalyzeTextRequest(BaseModel):
 def find_ward_by_coords(lat: float, lon: float) -> Optional[int]:
     """Find ward number for given coordinates"""
     try:
-        # use PostGIS fn from schema
         result = supabase.rpc('get_ward_by_coordinates', {
             'longitude': lon,
             'latitude': lat
@@ -55,7 +54,6 @@ def find_ward_by_coords(lat: float, lon: float) -> Optional[int]:
 
 # endpoints
 
-# get sentiment summary for all wards
 @router.get("/all-wards-sentiment")
 def get_all_wards_sentiment():
     try:
@@ -81,7 +79,6 @@ def get_all_wards_sentiment():
 @router.get("/ward-sentiment/{ward_number}")
 def get_ward_sentiment(ward_number: int):
     try:
-        # ward info
         ward_result = supabase.table('bengaluru_wards')\
             .select('ward_number, ward_name_en')\
             .eq('ward_number', ward_number)\
@@ -91,7 +88,6 @@ def get_ward_sentiment(ward_number: int):
         if not ward_result.data:
             raise HTTPException(404, "Ward not found")
         
-        # aggregated sentiment
         sentiment_result = supabase.table('ward_sentiment_summary')\
             .select('*')\
             .eq('ward_number', ward_number)\
@@ -121,7 +117,6 @@ def get_ward_sentiment(ward_number: int):
     except Exception as e:
         raise HTTPException(500, str(e))
 
-# get high-stress sentiment hotspots - only ward-specific posts
 @router.get("/hotspots")
 def get_hotspots(risk_level: str = "high", limit: int = 10):
     try:
@@ -156,7 +151,6 @@ def get_hotspots(risk_level: str = "high", limit: int = 10):
     except Exception as e:
         raise HTTPException(500, str(e))
 
-# get city-wide posts (no specific ward) [separate from ward hotspots]
 @router.get("/city-wide-sentiment")
 def get_city_wide_sentiment(limit: int = 20):
     try:
@@ -192,11 +186,9 @@ def get_city_wide_sentiment(limit: int = 20):
     except Exception as e:
         raise HTTPException(500, str(e))
 
-# get overall sentiment statistics - ward-specific only
 @router.get("/statistics")
 def get_statistics():
     try:
-        # only count posts with valid ward_number
         total_result = supabase.table('public_sentiment')\
             .select('*', count='exact')\
             .not_.is_('ward_number', 'null')\
@@ -204,7 +196,6 @@ def get_statistics():
         
         total_count = total_result.count or 0
         
-        # also get city-wide count separately
         citywide_result = supabase.table('public_sentiment')\
             .select('*', count='exact')\
             .is_('ward_number', 'null')\
@@ -223,7 +214,6 @@ def get_statistics():
                 'categories_covered': 0
             }
         
-        # count by sentiment (ward-specific only)
         positive_result = supabase.table('public_sentiment')\
             .select('*', count='exact')\
             .eq('sentiment', 'positive')\
@@ -248,7 +238,6 @@ def get_statistics():
             .not_.is_('ward_number', 'null')\
             .execute()
         
-        # get all records to calculate average (ward-specific only)
         all_records = supabase.table('public_sentiment')\
             .select('sentiment_score')\
             .not_.is_('ward_number', 'null')\
@@ -259,7 +248,6 @@ def get_statistics():
             scores = [r['sentiment_score'] for r in all_records.data if r.get('sentiment_score') is not None]
             avg_sentiment = sum(scores) / len(scores) if scores else 0
         
-        # count unique wards (excluding NULL)
         wards_result = supabase.table('public_sentiment')\
             .select('ward_number')\
             .not_.is_('ward_number', 'null')\
@@ -267,7 +255,6 @@ def get_statistics():
         
         unique_wards = len(set(r['ward_number'] for r in wards_result.data if r.get('ward_number')))
         
-        # count unique categories
         categories_result = supabase.table('public_sentiment')\
             .select('policy_category')\
             .not_.is_('ward_number', 'null')\
@@ -300,43 +287,34 @@ def get_statistics():
             'categories_covered': 0
         }
 
-# analyze sentiment for single text 
 @router.post("/analyze-text")
 def analyze_text(request: AnalyzeTextRequest):
     try:
-        # Get model
         model = get_model()
-        
-        # Clean text
         clean_text = SentimentProcessor.clean_text(request.text)
-        
-        # Analyze sentiment
         result = model.analyze_single(clean_text)
         
-        # Extract location if not provided
-        location = request.location
-        lat = request.latitude
-        lon = request.longitude
+        # Try to extract location from text
+        loc_data = SentimentProcessor.extract_location(clean_text)
         
-        if not location or not lat or not lon:
-            loc_data = SentimentProcessor.extract_location(clean_text)
-            if loc_data:
-                location, lat, lon = loc_data
-            else:
-                location = "Bangalore (General)"
-                lat, lon = 12.9716, 77.5946
+        if loc_data:
+            # Real location extracted
+            location, lat, lon = loc_data
+            ward_number = find_ward_by_coords(lat, lon)
+            print(f"✓ Location extracted: {location} → Ward {ward_number}")
+        else:
+            # No location found => city-wide post
+            location = "Bangalore (General)"
+            lat, lon = 12.9716, 77.5946  
+            ward_number = None  
+            print(f"✗ No location found → City-Wide")
         
-        # Find ward
-        ward_number = find_ward_by_coords(lat, lon)
-        
-        # Categorize
         category = SentimentProcessor.categorize_policy(clean_text)
         stress_risk = SentimentProcessor.calculate_stress_risk(
             result['sentiment_score'],
             category
         )
         
-        # Save to database
         supabase.table('public_sentiment').insert({
             'ward_number': ward_number,
             'location': location,
@@ -361,7 +339,6 @@ def analyze_text(request: AnalyzeTextRequest):
     except Exception as e:
         raise HTTPException(500, str(e))
 
-# trigger Reddit data collection (background task)
 @router.post("/collect-reddit")
 def trigger_reddit_collection(background_tasks: BackgroundTasks, max_posts: int = 100):
     background_tasks.add_task(collect_and_store_reddit, max_posts)
@@ -370,12 +347,10 @@ def trigger_reddit_collection(background_tasks: BackgroundTasks, max_posts: int 
         'message': f'Collecting up to {max_posts} Reddit posts in background'
     }
 
-# background task to collect and analyze data from Reddit and News
 def collect_and_store_reddit(max_posts: int = 100):
     try:
-        print(f"sentiment data collection and analysis")
+        print(f"Starting Sentiment Collection")
         
-        # initialize collectors
         collector = DataCollector()
         preprocessor = TextPreprocessor()
         model = get_model()
@@ -392,7 +367,6 @@ def collect_and_store_reddit(max_posts: int = 100):
             print("No data collected")
             return
         
-        # preprocess texts
         print(f"Preprocessing {len(all_data)} texts...")
         cleaned_texts = []
         for item in all_data:
@@ -400,40 +374,46 @@ def collect_and_store_reddit(max_posts: int = 100):
             cleaned_texts.append(clean)
             item['cleaned_text'] = clean
         
-        # analyze sentiment in batches
         print(f"Analyzing sentiment...")
         sentiments = model.analyze_batch(cleaned_texts, batch_size=16)
         
-        # Process and store
-        print(f"Storing results in db...")
+        print(f"Processing and storing...")
         stored_count = 0
+        citywide_count = 0
+        ward_count = 0
         
         for item, sentiment in zip(all_data, sentiments):
             # Extract location
             loc_data = SentimentProcessor.extract_location(item['cleaned_text'])
+            
             if loc_data:
+                # Real location found
                 location, lat, lon = loc_data
+                ward_number = find_ward_by_coords(lat, lon)
+                
+                if ward_number:
+                    ward_count += 1
+                    # print(f" Ward post: {location} - Ward {ward_number}")
+                else:
+                    citywide_count += 1
+                    # print(f" Out-of-bounds: {location} - City-Wide")
             else:
+                # No location mentioned - city-wide
                 location = "Bangalore (General)"
                 lat, lon = 12.9716, 77.5946
+                ward_number = None
+                citywide_count += 1
+                # print(f" Generic post => City-Wide")
             
-            # Find ward using PostGIS
-            ward_number = find_ward_by_coords(lat, lon)
-            
-            # Categorize by policy
             category = SentimentProcessor.categorize_policy(item['cleaned_text'])
-            
-            # Calculate stress risk
             stress_risk = SentimentProcessor.calculate_stress_risk(
                 sentiment['sentiment_score'],
                 category
             )
             
-            # Extract urban features
             features = preprocessor.extract_urban_features(item['cleaned_text'])
             dominant_theme = max(features, key=features.get) if features else 'general'
             
-            # Store in Supabase (with duplicate prevention)
             try:
                 supabase.table('public_sentiment').insert({
                     'ward_number': ward_number,
@@ -448,26 +428,27 @@ def collect_and_store_reddit(max_posts: int = 100):
                     'dominant_theme': dominant_theme.replace('mentions_', ''),
                     'stress_risk': stress_risk,
                     'platform': item.get('platform', 'unknown'),
-                    'source_url': item.get('url', '')  # url for deduplication
+                    'source_url': item.get('url', '')
                 }).execute()
                 
                 stored_count += 1
             except Exception as e:
                 if 'duplicate key value' not in str(e).lower():
-                    print(f"Error storing item: {e}")
+                    print(f" Error storing: {e}")
         
-        # Refresh materialized view for fast queries
-        print(f"Refreshing aggregated view...")
+        print(f"\nRefreshing aggregated view...")
         try:
             supabase.rpc('refresh_sentiment_summary').execute()
         except:
-            print("Could not refresh view (may not exist yet)")
+            print("Could not refresh view")
         
-        print(f"Collection Complete")
+        print(f"\nCollection Complete")
         print(f"  Total collected: {len(all_data)}")
         print(f"  Successfully stored: {stored_count}")
-        print(f"  Reddit posts: {sum(1 for d in all_data if d.get('platform') == 'reddit')}")
-        print(f"  News articles: {sum(1 for d in all_data if d.get('platform') == 'news')}")
+        print(f"  Ward-specific: {ward_count}")
+        print(f"  City-wide: {citywide_count}")
+        print(f"  Reddit: {sum(1 for d in all_data if d.get('platform') == 'reddit')}")
+        print(f"  News: {sum(1 for d in all_data if d.get('platform') == 'news')}")
         
     except Exception as e:
         print(f"Collection failed: {e}")

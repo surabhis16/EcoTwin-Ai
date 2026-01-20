@@ -95,24 +95,28 @@ export function SentimentAnalysis() {
     }
   }
 
-  const getSentimentColor = (score: number) => {
-    if (score > 0.2) return "text-emerald-500"
-    if (score < -0.2) return "text-red-500"
-    return "text-yellow-500"
-  }
-
-  const getSentimentBgColor = (sentiment: string) => {
-    switch (sentiment) {
-      case "positive": return "bg-emerald-500"
-      case "negative": return "bg-red-500"
-      default: return "bg-yellow-500"
-    }
-  }
-
   const formatDate = (dateString: string) => {
     if (!dateString) return ""
     const date = new Date(dateString)
     return date.toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })
+  }
+
+  const getSentimentBarColor = (score: number) => {
+    if (score > 0.1) return "bg-emerald-500"
+    if (score < -0.1) return "bg-red-500"
+    return "bg-yellow-500"
+  }
+
+  const getSentimentTextColor = (score: number) => {
+    if (score > 0.1) return "text-emerald-500"
+    if (score < -0.1) return "text-red-500"
+    return "text-yellow-500"
+  }
+
+  const getSentimentBarWidth = (score: number) => {
+    const absScore = Math.abs(score)
+    if (absScore < 0.15) return Math.max(absScore * 100, 15)
+    return absScore * 100
   }
 
   const filteredHotspots = activeFilter === "all"
@@ -120,6 +124,12 @@ export function SentimentAnalysis() {
     : activeFilter === "stress"
       ? hotspots
       : hotspots.filter(h => h.policy_category === activeFilter)
+
+  const filteredCitywide = activeFilter === "all"
+    ? citywidePost
+    : activeFilter === "stress"
+      ? citywidePost.filter(p => p.stress_risk === "high")
+      : citywidePost.filter(p => p.policy_category === activeFilter)
 
   if (loading) {
     return (
@@ -199,7 +209,7 @@ export function SentimentAnalysis() {
           className="gap-2"
         >
           <MapPin className="h-4 w-4" />
-          Ward-Specific ({hotspots.length})
+          Ward-Specific ({filteredHotspots.length})
         </Button>
         <Button
           variant={activeTab === "citywide" ? "default" : "outline"}
@@ -208,55 +218,54 @@ export function SentimentAnalysis() {
           className="gap-2"
         >
           <Globe className="h-4 w-4" />
-          City-Wide ({citywidePost.length})
+          City-Wide ({filteredCitywide.length})
+        </Button>
+      </div>
+
+      {/* Category Filters */}
+      <div className="mb-4 flex flex-wrap gap-2">
+        <Button
+          variant={activeFilter === "all" ? "default" : "outline"}
+          size="sm"
+          onClick={() => setActiveFilter("all")}
+        >
+          All Issues
+        </Button>
+        <Button
+          variant={activeFilter === "infrastructure" ? "default" : "outline"}
+          size="sm"
+          onClick={() => setActiveFilter("infrastructure")}
+        >
+          Infrastructure
+        </Button>
+        <Button
+          variant={activeFilter === "water" ? "default" : "outline"}
+          size="sm"
+          onClick={() => setActiveFilter("water")}
+        >
+          Water
+        </Button>
+        <Button
+          variant={activeFilter === "urban_planning" ? "default" : "outline"}
+          size="sm"
+          onClick={() => setActiveFilter("urban_planning")}
+        >
+          Urban Planning
+        </Button>
+        <Button
+          variant={activeFilter === "stress" ? "default" : "outline"}
+          size="sm"
+          onClick={() => setActiveFilter("stress")}
+          className="gap-1"
+        >
+          <AlertTriangle className="h-3 w-3" />
+          High Stress
         </Button>
       </div>
 
       {/* Ward-Specific Tab */}
       {activeTab === "ward" && (
         <>
-          {/* Category Filters */}
-          <div className="mb-4 flex flex-wrap gap-2">
-            <Button
-              variant={activeFilter === "all" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setActiveFilter("all")}
-            >
-              All Issues
-            </Button>
-            <Button
-              variant={activeFilter === "infrastructure" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setActiveFilter("infrastructure")}
-            >
-              Infrastructure
-            </Button>
-            <Button
-              variant={activeFilter === "water" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setActiveFilter("water")}
-            >
-              Water
-            </Button>
-            <Button
-              variant={activeFilter === "urban_planning" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setActiveFilter("urban_planning")}
-            >
-              Urban Planning
-            </Button>
-            <Button
-              variant={activeFilter === "stress" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setActiveFilter("stress")}
-              className="gap-1"
-            >
-              <AlertTriangle className="h-3 w-3" />
-              High Stress
-            </Button>
-          </div>
-
-          {/* Hotspots Grid - Full Width Layout */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-125 overflow-y-auto">
             {filteredHotspots.length === 0 ? (
               <div className="col-span-full text-center py-12 text-muted-foreground">
@@ -280,11 +289,11 @@ export function SentimentAnalysis() {
                   <div className="flex items-center gap-3 mb-2">
                     <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
                       <div
-                        className="h-full bg-red-500"
-                        style={{ width: `${Math.abs(spot.sentiment_score) * 100}%` }}
+                        className={`h-full ${getSentimentBarColor(spot.sentiment_score)}`}
+                        style={{ width: `${getSentimentBarWidth(spot.sentiment_score)}%` }}
                       />
                     </div>
-                    <span className="text-xs font-bold text-red-500">
+                    <span className={`text-xs font-bold ${getSentimentTextColor(spot.sentiment_score)}`}>
                       {(spot.sentiment_score * 100).toFixed(0)}
                     </span>
                   </div>
@@ -294,7 +303,12 @@ export function SentimentAnalysis() {
                   </p>
 
                   <div className="flex items-center justify-between text-xs gap-2">
-                    <div className="flex items-center gap-2 text-muted-foreground">
+                    <div className="flex items-center gap-2 text-muted-foreground flex-wrap">
+                      {spot.platform && (
+                        <Badge variant="secondary" className="text-xs">
+                          {spot.platform}
+                        </Badge>
+                      )}
                       <Badge variant="secondary" className="text-xs">
                         {spot.policy_category}
                       </Badge>
@@ -326,13 +340,13 @@ export function SentimentAnalysis() {
       {/* City-Wide Tab */}
       {activeTab === "citywide" && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-125 overflow-y-auto">
-          {citywidePost.length === 0 ? (
+          {filteredCitywide.length === 0 ? (
             <div className="col-span-full text-center py-12 text-muted-foreground">
               <Globe className="h-12 w-12 mx-auto mb-2 opacity-50" />
               <p>No city-wide posts yet</p>
             </div>
           ) : (
-            citywidePost.map((post, idx) => (
+            filteredCitywide.map((post, idx) => (
               <div
                 key={idx}
                 className="p-3 rounded-lg border bg-muted/30 border-transparent"
@@ -358,11 +372,11 @@ export function SentimentAnalysis() {
                 <div className="flex items-center gap-3 mb-2">
                   <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
                     <div
-                      className={getSentimentBgColor(post.sentiment)}
-                      style={{ width: `${Math.abs(post.sentiment_score) * 100}%` }}
+                      className={`h-full ${getSentimentBarColor(post.sentiment_score)}`}
+                      style={{ width: `${getSentimentBarWidth(post.sentiment_score)}%` }}
                     />
                   </div>
-                  <span className={`text-xs font-bold ${getSentimentColor(post.sentiment_score)}`}>
+                  <span className={`text-xs font-bold ${getSentimentTextColor(post.sentiment_score)}`}>
                     {(post.sentiment_score * 100).toFixed(0)}
                   </span>
                 </div>
