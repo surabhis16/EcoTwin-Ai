@@ -5,12 +5,11 @@ import { Button } from "@/components/ui/button"
 import { MapPin, Loader2, AlertCircle, Maximize2, Minimize2 } from "lucide-react"
 import { useState, useEffect, useRef } from "react"
 
-//AQI Color helper
 const getAQIColor = (aqi: number, Cesium: any) => {
-  if (aqi <= 50) return Cesium.Color.fromCssColorString("#22c55e")   // Good
-  if (aqi <= 100) return Cesium.Color.fromCssColorString("#facc15") // Moderate
-  if (aqi <= 200) return Cesium.Color.fromCssColorString("#f97316") // Poor
-  return Cesium.Color.fromCssColorString("#dc2626")                 // Severe
+  if (aqi <= 50) return Cesium.Color.fromCssColorString("#22c55e")
+  if (aqi <= 100) return Cesium.Color.fromCssColorString("#facc15")
+  if (aqi <= 200) return Cesium.Color.fromCssColorString("#f97316")
+  return Cesium.Color.fromCssColorString("#dc2626")
 }
 
 interface InteractiveMapProps {
@@ -26,7 +25,7 @@ interface WardBaseline {
   albedo?: number
   lon: number
   lat: number
-  aqi?: number 
+  aqi?: number
 }
 
 export function InteractiveMap({ viewMode, simulationActive, simulationData, comparisonMode }: InteractiveMapProps) {
@@ -44,18 +43,15 @@ export function InteractiveMap({ viewMode, simulationActive, simulationData, com
   const initializedRef = useRef(false)
 
   // Fetch ward data
-  // Fetch ward data, metadata, AND AQI
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true)
 
-        // 1. Fetch baselines, metadata, and AQI in parallel
-        // Note: Replace '/api/uhi/ward-aqi' with your actual endpoint for the AQI data shown in the screenshot
         const [baselinesRes, metadataRes, aqiRes] = await Promise.all([
           fetch('http://localhost:8000/api/uhi/all-ward-baselines'),
           fetch('http://localhost:8000/api/uhi/wards-metadata'),
-          fetch('http://localhost:8000/api/uhi/all-ward-baselines')
+          fetch('http://localhost:8000/api/uhi/all-ward-aqi')
         ])
 
         if (!baselinesRes.ok || !metadataRes.ok || !aqiRes.ok) {
@@ -66,27 +62,23 @@ export function InteractiveMap({ viewMode, simulationActive, simulationData, com
         const metadata = await metadataRes.json()
         const aqiData = await aqiRes.json()
 
-        // 2. Create a lookup map for AQI data based on ward_number
-        // (Assuming aqiData is an array of objects like the screenshot: { ward_number: 94, aqi: 47.12, ... })
+        // Create AQI lookup map
         const aqiMap: Record<number, number> = {}
         if (Array.isArray(aqiData)) {
-            aqiData.forEach((row: any) => {
-                aqiMap[row.ward_number] = row.aqi
-            })
+          aqiData.forEach((row: any) => {
+            aqiMap[row.ward_number] = row.aqi
+          })
         }
 
-        // 3. Merge AQI into the existing baselines data
         const mergedData: Record<number, WardBaseline> = { ...baselines }
-        
         Object.keys(mergedData).forEach((key) => {
-            const wardId = parseInt(key)
-            // If we have an AQI value for this ward, add it to the data object
-            if (aqiMap[wardId] !== undefined) {
-                mergedData[wardId] = {
-                    ...mergedData[wardId],
-                    aqi: aqiMap[wardId]
-                }
+          const wardId = parseInt(key)
+          if (aqiMap[wardId] !== undefined) {
+            mergedData[wardId] = {
+              ...mergedData[wardId],
+              aqi: aqiMap[wardId]
             }
+          }
         })
 
         setWardsData(mergedData)
@@ -103,7 +95,6 @@ export function InteractiveMap({ viewMode, simulationActive, simulationData, com
     fetchData()
   }, [])
 
-  // Initialize Cesium
   useEffect(() => {
     if (initializedRef.current || Object.keys(wardsData).length === 0) return
     initializedRef.current = true
@@ -139,7 +130,6 @@ export function InteractiveMap({ viewMode, simulationActive, simulationData, com
 
         viewerRef.current = viewer
 
-        // Set initial camera
         viewer.camera.setView({
           destination: Cesium.Cartesian3.fromDegrees(77.5946, 12.9716, 60000),
         })
@@ -151,17 +141,10 @@ export function InteractiveMap({ viewMode, simulationActive, simulationData, com
           })
         }, 300)
 
-        // Render wards
         await renderWards(viewer, Cesium)
 
       } catch (err) {
         console.error('Cesium init error:', err)
-        // Log detailed error information
-        if (err instanceof Error) {
-          console.error('Error name:', err.name)
-          console.error('Error message:', err.message)
-          console.error('Error stack:', err.stack)
-        }
         setError(`Failed to initialize map viewer: ${err instanceof Error ? err.message : String(err)}`)
       }
     }
@@ -187,79 +170,70 @@ export function InteractiveMap({ viewMode, simulationActive, simulationData, com
       Cesium = await import("cesium")
     }
 
-    // Clear existing entities
     wardEntitiesRef.current.forEach(entity => {
       viewer.entities.remove(entity)
     })
     wardEntitiesRef.current = []
 
-    // Get color based on layer and data
-    // Get color based on layer and data
     const getColor = (wardNum: number, data: WardBaseline) => {
-      const isSimulated = simulationActive && simulationData && simulationData.wardId === wardNum;
-      
-      // Handle Pollution Layer
+      const isSimulated = simulationActive && simulationData && simulationData.wardId === wardNum
+
       if (activeLayer === "pollution") {
         const aqi = data.aqi !== undefined ? Number(data.aqi) : null
         if (aqi !== null && !isNaN(aqi)) {
           return getAQIColor(aqi, Cesium)
         }
-        // Fallback if AQI data is missing for this specific ward
-        return Cesium.Color.fromCssColorString('#94a3b8') 
+        //grey for missing aqi
+        return Cesium.Color.fromCssColorString('#94a3b8')
       }
 
-      // Handle Heat Layer
       if (activeLayer === "heat") {
-        let temp = data.lst;
+        let temp = data.lst
         if (viewMode === "simulated" && isSimulated) {
-          temp = simulationData.lstAfter;
+          temp = simulationData.lstAfter
         }
-        if (temp >= 45) return Cesium.Color.fromCssColorString('#7f1d1d');
-        if (temp >= 40) return Cesium.Color.fromCssColorString('#DC2626');
-        if (temp >= 32) return Cesium.Color.fromCssColorString('#F59E0B');
-        return Cesium.Color.fromCssColorString('#059669');
-      } 
-      
-      // Handle Green Layer
-      if (activeLayer === "green") {
-        let ndvi = data.ndvi;
-        if (viewMode === "simulated" && isSimulated) {
-          ndvi = simulationData.ndviAfter;
-        }
-        if (ndvi >= 0.5) return Cesium.Color.fromCssColorString('#059669');
-        if (ndvi >= 0.3) return Cesium.Color.fromCssColorString('#10b981');
-        if (ndvi >= 0.1) return Cesium.Color.fromCssColorString('#fbbf24');
-        return Cesium.Color.fromCssColorString('#dc2626');
+        if (temp >= 45) return Cesium.Color.fromCssColorString('#7f1d1d')
+        if (temp >= 40) return Cesium.Color.fromCssColorString('#DC2626')
+        if (temp >= 32) return Cesium.Color.fromCssColorString('#F59E0B')
+        return Cesium.Color.fromCssColorString('#059669')
       }
 
-      // Default fallback
-      return Cesium.Color.fromCssColorString('#94a3b8');
+      if (activeLayer === "green") {
+        let ndvi = data.ndvi
+        if (viewMode === "simulated" && isSimulated) {
+          ndvi = simulationData.ndviAfter
+        }
+        if (ndvi >= 0.5) return Cesium.Color.fromCssColorString('#059669')
+        if (ndvi >= 0.3) return Cesium.Color.fromCssColorString('#10b981')
+        if (ndvi >= 0.1) return Cesium.Color.fromCssColorString('#fbbf24')
+        return Cesium.Color.fromCssColorString('#dc2626')
+      }
+
+      return Cesium.Color.fromCssColorString('#94a3b8')
     }
 
-
-    // Get ward name from metadata
     const getWardName = (wardNum: number) => {
       const meta = wardsMetadata.find(w => w.id === wardNum)
       return meta ? meta.name : `Ward ${wardNum}`
     }
 
-    // Render each ward
     Object.entries(wardsData).forEach(([wardNumStr, data]) => {
       const wardNum = parseInt(wardNumStr)
+
+      if (activeLayer === "pollution" && (data.aqi === undefined || data.aqi === null)) {
+        return // skip wards without AQI data when showing pollution layer
+      }
+
       const wardName = getWardName(wardNum)
       const color = getColor(wardNum, data)
 
-      // Check if this is the simulated ward
-      const isSimulated = simulationActive &&
-        simulationData &&
-        simulationData.wardId === wardNum
+      const isSimulated = simulationActive && simulationData && simulationData.wardId === wardNum
 
-      // Determine display values
       let displayLST = data.lst
       let displayNDVI = data.ndvi
       let riskLevel = data.lst >= 45 ? "Extreme" :
         data.lst >= 40 ? "High" :
-          data.lst >= 32 ? "Moderate" : "Low";
+          data.lst >= 32 ? "Moderate" : "Low"
 
       if (viewMode === "simulated" && isSimulated) {
         displayLST = simulationData.lstAfter
@@ -276,24 +250,6 @@ export function InteractiveMap({ viewMode, simulationActive, simulationData, com
           outlineWidth: isSimulated ? 3 : 1,
         },
         description: `
-          
-
-
-          ${activeLayer === "pollution" && data.aqi != null ? `
-          <tr style="border-bottom: 1px solid #e5e7eb;">
-          <td style="padding: 6px 0; color: #666;">AQI:</td>
-          <td style="padding: 6px 0; font-weight: 600; text-align: right;">
-           <span style="color: ${
-               data.aqi >= 200 ? '#dc2626' :
-              data.aqi >= 100 ? '#f97316' :
-              data.aqi >= 50 ? '#facc15' : '#22c55e'
-            };">
-            ${data.aqi}
-          </span>
-          </td>
-          </tr>
-          ` : ''}
-
           <div style="font-family: sans-serif; padding: 12px; max-width: 320px;">
             <h3 style="color: #059669; margin: 0 0 12px 0; font-size: 16px;">
               ${wardName}
@@ -315,6 +271,21 @@ export function InteractiveMap({ viewMode, simulationActive, simulationData, com
                 <td style="padding: 6px 0; color: #666;">Ward Number:</td>
                 <td style="padding: 6px 0; font-weight: 600; text-align: right;">#${wardNum}</td>
               </tr>
+              
+              ${activeLayer === "pollution" && data.aqi != null ? `
+                <tr style="border-bottom: 1px solid #e5e7eb;">
+                  <td style="padding: 6px 0; color: #666;">AQI:</td>
+                  <td style="padding: 6px 0; font-weight: 600; text-align: right;">
+                    <span style="color: ${data.aqi >= 200 ? '#dc2626' :
+              data.aqi >= 100 ? '#f97316' :
+                data.aqi >= 50 ? '#facc15' : '#22c55e'
+            };">
+                      ${data.aqi.toFixed(1)}
+                    </span>
+                  </td>
+                </tr>
+              ` : ''}
+              
               ${activeLayer === "heat" ? `
                 <tr style="border-bottom: 1px solid #e5e7eb;">
                   <td style="padding: 6px 0; color: #666;">Temperature:</td>
@@ -328,16 +299,19 @@ export function InteractiveMap({ viewMode, simulationActive, simulationData, com
                     </span>
                   </td>
                 </tr>
-                <tr style="border-bottom: 1px solid #e5e7eb;">
-                  <td style="padding: 6px 0; color: #666;">Surface Albedo:</td>
-                  <td style="padding: 6px 0; font-weight: 600; text-align: right;">
-                    ${data.albedo != null ? data.albedo.toFixed(2) : 'N/A'} 
-                    ${data.albedo != null ? `<span style="font-size: 10px; font-weight: normal; color: #999;">
-                      (${data.albedo < 0.15 ? 'Highly Absorbent' : 'Reflective'})
-                    </span>` : ''}
-                  </td>
-                </tr>
+                ${data.albedo != null ? `
+                  <tr style="border-bottom: 1px solid #e5e7eb;">
+                    <td style="padding: 6px 0; color: #666;">Surface Albedo:</td>
+                    <td style="padding: 6px 0; font-weight: 600; text-align: right;">
+                      ${data.albedo.toFixed(2)}
+                      <span style="font-size: 10px; font-weight: normal; color: #999;">
+                        (${data.albedo < 0.15 ? 'Highly Absorbent' : 'Reflective'})
+                      </span>
+                    </td>
+                  </tr>
+                ` : ''}
               ` : ''}
+              
               ${activeLayer === "green" ? `
                 <tr style="border-bottom: 1px solid #e5e7eb;">
                   <td style="padding: 6px 0; color: #666;">NDVI:</td>
@@ -352,6 +326,7 @@ export function InteractiveMap({ viewMode, simulationActive, simulationData, com
                   </td>
                 </tr>
               ` : ''}
+              
               <tr>
                 <td style="padding: 6px 0; color: #666;">Coordinates:</td>
                 <td style="padding: 6px 0; font-weight: 600; text-align: right; font-size: 11px;">${data.lat.toFixed(4)}, ${data.lon.toFixed(4)}</td>
@@ -369,8 +344,6 @@ export function InteractiveMap({ viewMode, simulationActive, simulationData, com
 
       wardEntitiesRef.current.push(entity)
     })
-
-    console.log(`Rendered ${wardEntitiesRef.current.length} wards`)
   }
 
   const toggleFullscreen = async () => {
@@ -408,14 +381,12 @@ export function InteractiveMap({ viewMode, simulationActive, simulationData, com
   const getLegendItems = () => {
     if (activeLayer === "pollution") {
       return [
-          { color: '#22c55e', label: 'Good (≤50)' },
-          { color: '#facc15', label: 'Moderate (51–100)' },
-          { color: '#f97316', label: 'Poor (101–200)' },
-          { color: '#dc2626', label: 'Severe (>200)' },
-          ]
-      }
-
-    else if (activeLayer === "heat") {
+        { color: '#22c55e', label: 'Good (≤50)' },
+        { color: '#facc15', label: 'Moderate (51–100)' },
+        { color: '#f97316', label: 'Poor (101–200)' },
+        { color: '#dc2626', label: 'Severe (>200)' },
+      ]
+    } else if (activeLayer === "heat") {
       return [
         { color: '#7f1d1d', label: 'Extreme (≥45°C)' },
         { color: '#DC2626', label: 'High (40-45°C)' },
@@ -465,7 +436,6 @@ export function InteractiveMap({ viewMode, simulationActive, simulationData, com
           {isFullscreen ? <Minimize2 className="h-5 w-5" /> : <Maximize2 className="h-5 w-5" />}
         </button>
 
-        {/* Legend */}
         {!isFullscreen && (
           <div className="absolute bottom-4 left-4 space-y-2 z-10">
             {getLegendItems().map((item, idx) => (
@@ -520,16 +490,15 @@ export function InteractiveMap({ viewMode, simulationActive, simulationData, com
             >
               Green Cover
             </Button>
-            
             <Button
-             variant={activeLayer === "pollution" ? "default" : "outline"}
-            size="sm"
-            onClick={() => setActiveLayer("pollution")}
-            disabled={loading}
-            className={activeLayer === "pollution" ? 'bg-purple-600 hover:bg-purple-700' : ''}
+              variant={activeLayer === "pollution" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setActiveLayer("pollution")}
+              disabled={loading}
+              className={activeLayer === "pollution" ? 'bg-purple-600 hover:bg-purple-700' : ''}
             >
-            Air Quality
-          </Button> 
+              Air Quality
+            </Button>
           </div>
 
           {simulationActive && simulationData && (
