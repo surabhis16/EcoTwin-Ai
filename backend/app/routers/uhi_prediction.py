@@ -279,8 +279,8 @@ def get_city_statistics():
             }
         }
 
-# Add this endpoint to your uhi_prediction.py
 
+# fetches the latest aqi data for all wards to display on the 3D map
 @router.get("/all-ward-aqi")
 def get_all_ward_aqi():
     with engine.connect() as conn:

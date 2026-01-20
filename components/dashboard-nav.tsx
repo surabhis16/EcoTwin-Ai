@@ -31,7 +31,7 @@ export function DashboardNav() {
 
         <div className="flex items-center gap-2">
           <Button variant="ghost">Settings</Button>
-          <Button>Export Data</Button>
+          
         </div>
       </div>
     </nav>

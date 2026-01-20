@@ -67,10 +67,10 @@ export default function DashboardPage() {
     const energySavingsPercent = (data.temperatureReduction * 7.5).toFixed(1)
     const carEquivalent = Math.floor(data.co2Offset / 4.6)
     const pricePerSqm = data.selectedMaterial ? (data.selectedMaterial.price_inr_per_m3 / 10 || 500) : 450
-    const wardAreaSqKm = 2.5 
-    const areaM2 = wardAreaSqKm * 1000000 
+    const wardAreaSqKm = 2.5
+    const areaM2 = wardAreaSqKm * 1000000
     const coveragePercent = data.intensity / 100
-    const estimatedCostCr = (areaM2 * coveragePercent * pricePerSqm) / 10000000 
+    const estimatedCostCr = (areaM2 * coveragePercent * pricePerSqm) / 10000000
 
     return { energySavingsPercent, carEquivalent, estimatedCostCr: estimatedCostCr.toFixed(2) }
   }
@@ -171,7 +171,7 @@ export default function DashboardPage() {
   const handleMaterialApplied = (materialData: any) => {
     setMaterialApplied(true)
     if (simulationActive && simulationData) {
-       const updatedSimulation: SimulationData = {
+      const updatedSimulation: SimulationData = {
         ...simulationData,
         selectedMaterial: materialData.selectedMaterial,
         temperatureReduction: simulationData.temperatureReduction + materialData.temperatureReduction,
@@ -182,15 +182,15 @@ export default function DashboardPage() {
       setSimulationData(updatedSimulation)
       updateUHIForSimulation(updatedSimulation)
     } else {
-       handleSimulate({
-         ...selectedWardData, 
-         wardId: selectedWardData?.ward_id,
-         wardName: selectedWardData?.ward_name || "Zone",
-         intervention: "Material", 
-         intensity: 100,
-         temperatureReduction: materialData.temperatureReduction,
-         co2Offset: materialData.co2Offset || 0
-       })
+      handleSimulate({
+        ...selectedWardData,
+        wardId: selectedWardData?.ward_id,
+        wardName: selectedWardData?.ward_name || "Zone",
+        intervention: "Material",
+        intensity: 100,
+        temperatureReduction: materialData.temperatureReduction,
+        co2Offset: materialData.co2Offset || 0
+      })
     }
     setTimeout(() => setMaterialApplied(false), 5000)
   }
@@ -290,7 +290,7 @@ export default function DashboardPage() {
         </div>
 
         <div className="grid gap-6 lg:grid-cols-2">
-          
+
           {/* Top Section: Input Map & Engine */}
           <div className="lg:col-span-1 min-h-[500px] flex flex-col">
             <Visualization3D onWardSelect={handleWardSelection} />
@@ -302,7 +302,7 @@ export default function DashboardPage() {
 
           {/* Results Area Wrapper: This contains the Impact Card, Map, and Feasibility */}
           <div className="lg:col-span-2 grid grid-cols-1 lg:grid-cols-2 gap-6 animate-in fade-in slide-in-from-bottom duration-500">
-            
+
             {/* 1. Impact Assessment (Spans full width when active) */}
             {simulationActive && simulationData && (
               <Card className="lg:col-span-2 p-8 border-primary/20 bg-linear-to-br from-primary/5 to-emerald-500/5 shadow-lg">
@@ -376,10 +376,37 @@ export default function DashboardPage() {
                   >
                     Clear Simulation
                   </Button>
-                  <Button className="flex-1 bg-primary text-primary-foreground">
+                  <Button
+                    className="flex-1 bg-primary text-primary-foreground"
+                    onClick={async () => {
+                      if (!simulationData) return;
+
+                      const response = await fetch("http://localhost:8000/api/export/pdf", {
+                        method: "POST",
+                        headers: {
+                          "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify({
+                          generatedAt: new Date().toISOString(),
+                          viewMode,
+                          comparisonMode,
+                          simulationData
+                        })
+                      });
+
+                      const blob = await response.blob();
+                      const url = window.URL.createObjectURL(blob);
+
+                      const a = document.createElement("a");
+                      a.href = url;
+                      a.download = `EcoTwin_Report_${simulationData.wardName}.pdf`;
+                      a.click();
+                    }}
+                  >
                     <ArrowRight className="h-4 w-4 mr-2" />
                     Export Results
                   </Button>
+
                 </div>
               </Card>
             )}
@@ -453,7 +480,7 @@ export default function DashboardPage() {
                 </div>
               </Card>
             )}
-            
+
           </div>
 
           <div className="lg:col-span-2">

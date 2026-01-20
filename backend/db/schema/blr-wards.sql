@@ -14,6 +14,7 @@ CREATE TABLE bengaluru_wards (
     baseline_ndvi FLOAT,
     baseline_lst FLOAT,
     baseline_albedo FLOAT,
+    aqi FLOAT,
 
     built_up_density FLOAT,
     tree_count INTEGER,
@@ -52,7 +53,8 @@ RETURNS TABLE(
     ward_number INTEGER,
     baseline_ndvi FLOAT,
     baseline_lst FLOAT,
-    baseline_albedo FLOAT
+    baseline_albedo FLOAT,
+    aqi FLOAT
 ) AS $$
 BEGIN
     RETURN QUERY
@@ -62,7 +64,8 @@ BEGIN
         w.ward_number,
         w.baseline_ndvi,
         w.baseline_lst,
-        w.baseline_albedo
+        w.baseline_albedo,
+        w.aqi
     FROM bengaluru_wards w
     WHERE ST_Contains(
         w.geometry,
@@ -71,7 +74,3 @@ BEGIN
     LIMIT 1;
 END;
 $$ LANGUAGE plpgsql;
-
-
-
-
