@@ -1,22 +1,52 @@
 from fastapi import APIRouter
 from fastapi.responses import FileResponse
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.platypus import SimpleDocTemplate, Paragraph
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.pagesizes import A4
-from reportlab.lib.units import inch
 import tempfile
 from datetime import datetime
+import math
 
 router = APIRouter(prefix="/api/export", tags=["Export"])
+
 
 @router.post("/pdf")
 def export_pdf(payload: dict):
     data = payload["simulationData"]
 
-    # Create temp PDF file
+    # --------------------------------------------------
+    # FEASIBILITY VALUES (MATCH FRONTEND LOGIC)
+    # --------------------------------------------------
+    temperature_reduction = data.get("temperatureReduction", 0)
+    co2_offset = data.get("co2Offset", 0)
+    intensity = data.get("intensity", 0)
+    selected_material = data.get("selectedMaterial")
+
+    # Energy efficiency (%)
+    energy_efficiency = round(temperature_reduction * 7.5, 1)
+
+    # Pollution control (vehicle equivalent)
+    pollution_control = math.floor(co2_offset / 4.6) if co2_offset else 0
+
+    # Implementation cost (₹ Cr)
+    price_per_sqm = (
+        (selected_material.get("price_inr_per_m3", 500) / 10)
+        if selected_material else 450
+    )
+
+    ward_area_sq_km = 2.5
+    area_m2 = ward_area_sq_km * 1_000_000
+    coverage_percent = intensity / 100
+
+    implementation_cost_cr = round(
+        (area_m2 * coverage_percent * price_per_sqm) / 10_000_000, 2
+    )
+
+    # --------------------------------------------------
+    # PDF SETUP
+    # --------------------------------------------------
     temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
 
-    # PDF document with metadata 
     doc = SimpleDocTemplate(
         temp_file.name,
         pagesize=A4,
@@ -36,7 +66,7 @@ def export_pdf(payload: dict):
             fontSize=20,
             spaceAfter=20,
             leading=24,
-            alignment=1  
+            alignment=1
         )
     )
 
@@ -62,14 +92,18 @@ def export_pdf(payload: dict):
 
     story = []
 
+    # --------------------------------------------------
     # title
+    # --------------------------------------------------
     story.append(Paragraph("EcoTwin-AI Sustainability Report", styles["ReportTitle"]))
     story.append(Paragraph(
         f"Generated on {datetime.now().strftime('%d %B %Y, %H:%M')}",
         styles["Body"]
     ))
 
+    # --------------------------------------------------
     # context
+    # --------------------------------------------------
     story.append(Paragraph("Study Area & Intervention Overview", styles["SectionHeader"]))
 
     overview_text = (
@@ -82,7 +116,9 @@ def export_pdf(payload: dict):
 
     story.append(Paragraph(overview_text, styles["Body"]))
 
+    # --------------------------------------------------
     # thermal impact
+    # --------------------------------------------------
     story.append(Paragraph("Thermal Impact Assessment", styles["SectionHeader"]))
 
     thermal_text = (
@@ -95,7 +131,9 @@ def export_pdf(payload: dict):
 
     story.append(Paragraph(thermal_text, styles["Body"]))
 
+    # --------------------------------------------------
     # vegetation and risk
+    # --------------------------------------------------
     story.append(Paragraph("Vegetation Health & Risk Evaluation", styles["SectionHeader"]))
 
     vegetation_text = (
@@ -110,7 +148,9 @@ def export_pdf(payload: dict):
 
     story.append(Paragraph(vegetation_text, styles["Body"]))
 
+    # --------------------------------------------------
     # carbon impact
+    # --------------------------------------------------
     story.append(Paragraph("Carbon Offset & Environmental Benefits", styles["SectionHeader"]))
 
     carbon_text = (
@@ -122,7 +162,9 @@ def export_pdf(payload: dict):
 
     story.append(Paragraph(carbon_text, styles["Body"]))
 
+    # --------------------------------------------------
     # material intervention
+    # --------------------------------------------------
     if data.get("selectedMaterial"):
         story.append(Paragraph("Material-Based Intervention Impact", styles["SectionHeader"]))
 
@@ -137,7 +179,50 @@ def export_pdf(payload: dict):
 
         story.append(Paragraph(material_text, styles["Body"]))
 
+    # --------------------------------------------------
+    # FEASIBILITY ANALYSIS (ADDED)
+    # --------------------------------------------------
+    story.append(Paragraph("Feasibility Analysis", styles["SectionHeader"]))
+
+    story.append(Paragraph(
+        f"<b>Energy Efficiency:</b> The intervention achieves an estimated "
+        f"<b>{energy_efficiency}% reduction</b> in cooling-related energy demand, "
+        f"indicating improved energy efficiency at the ward level.",
+        styles["Body"]
+    ))
+
+    story.append(Paragraph(
+        f"<b>Implementation Feasibility:</b> The projected implementation cost is "
+        f"approximately <b>{implementation_cost_cr} crore rupees</b>, making the intervention "
+        f"economically viable for phased urban deployment.",
+        styles["Body"]
+    ))
+
+    story.append(Paragraph(
+        f"<b>Pollution Control Impact:</b> The achieved carbon offset is equivalent "
+        f"to removing approximately <b>{pollution_control} vehicles</b> from the road "
+        f"each year, highlighting its effectiveness in urban pollution reduction.",
+        styles["Body"]
+    ))
+
+    # --------------------------------------------------
+    # STRATEGIC BENEFITS (ADDED)
+    # --------------------------------------------------
+    story.append(Paragraph("Strategic & Policy-Level Benefits", styles["SectionHeader"]))
+
+    story.append(Paragraph(
+        "The results support evidence-based policy formulation by enabling "
+        "data-driven prioritization of high-impact wards. Improvements in thermal "
+        "comfort, energy efficiency, and pollution control enhance urban climate "
+        "resilience while supporting sustainable growth. These insights assist "
+        "urban authorities in optimized budget allocation, scalable deployment, "
+        "and alignment with long-term climate action strategies.",
+        styles["Body"]
+    ))
+
+    # --------------------------------------------------
     # build pdf
+    # --------------------------------------------------
     doc.build(story)
 
     return FileResponse(
