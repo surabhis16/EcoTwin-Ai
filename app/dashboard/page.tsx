@@ -1,4 +1,3 @@
-
 "use client"
 
 import { DashboardNav } from "@/components/dashboard-nav"
@@ -6,6 +5,7 @@ import { InteractiveMap } from "@/components/interactive-map"
 import { SentimentAnalysis } from "@/components/sentiment-analysis"
 import MaterialRecommender from "@/components/material-recommender"
 import PolicySimulationEngine from "@/components/policy-simulation-engine"
+import { FeasibilityAnalysis } from "@/components/feasibility-analysis" // Import the separate component
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -24,7 +24,6 @@ import { useState } from "react"
 import dynamic from "next/dynamic"
 import { updateUHIForSimulation } from "@/components/visualization-3d"
 
-// --- TYPES ---
 interface SimulationData {
   wardId: number
   wardName: string
@@ -62,7 +61,6 @@ export default function DashboardPage() {
   const [selectedSentimentWard, setSelectedSentimentWard] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  // --- LOGIC: SECONDARY METRICS ---
   const calculateSecondaryMetrics = (data: SimulationData) => {
     const energySavingsPercent = (data.temperatureReduction * 7.5).toFixed(1)
     const carEquivalent = Math.floor(data.co2Offset / 4.6)
@@ -420,63 +418,9 @@ export default function DashboardPage() {
               />
             </div>
 
-            {/* Feasibility Card */}
+            {/* Feasibility Strategies */}
             {simulationActive && secondaryMetrics && (
-              <Card className="lg:col-span-1 p-8 border-blue-500/20 bg-linear-to-br from-blue-950/20 to-background shadow-lg h-full">
-                <div className="mb-6">
-                  <h3 className="text-xl font-bold flex items-center gap-2">
-                    <Activity className="h-5 w-5 text-blue-400" />
-                    Feasibility & Strategic Benefits
-                  </h3>
-                  <p className="text-sm text-muted-foreground">
-                    Economic and social implications
-                  </p>
-                </div>
-
-                <div className="flex flex-col gap-6 h-full justify-around">
-                  {/* Energy Savings */}
-                  <div className="flex flex-col gap-2 p-5 rounded-xl bg-card/50 border">
-                    <div className="flex items-center gap-3 mb-1">
-                      <div className="h-8 w-8 rounded-full bg-yellow-500/10 flex items-center justify-center">
-                        <Zap className="h-4 w-4 text-yellow-500" />
-                      </div>
-                      <span className="text-sm font-semibold text-muted-foreground">Energy Efficiency</span>
-                    </div>
-                    <p className="text-3xl font-black text-foreground">
-                      {secondaryMetrics.energySavingsPercent}%
-                    </p>
-                    <p className="text-xs text-muted-foreground">Est. AC energy load reduction</p>
-                  </div>
-
-                  {/* Cost Estimate */}
-                  <div className="flex flex-col gap-2 p-5 rounded-xl bg-card/50 border">
-                    <div className="flex items-center gap-3 mb-1">
-                      <div className="h-8 w-8 rounded-full bg-green-500/10 flex items-center justify-center">
-                        <IndianRupee className="h-4 w-4 text-green-500" />
-                      </div>
-                      <span className="text-sm font-semibold text-muted-foreground">Implementation</span>
-                    </div>
-                    <p className="text-3xl font-black text-foreground">
-                      ₹{secondaryMetrics.estimatedCostCr} Cr
-                    </p>
-                    <p className="text-xs text-muted-foreground">Est. capital expenditure</p>
-                  </div>
-
-                  {/* Social Impact */}
-                  <div className="flex flex-col gap-2 p-5 rounded-xl bg-card/50 border">
-                    <div className="flex items-center gap-3 mb-1">
-                      <div className="h-8 w-8 rounded-full bg-blue-500/10 flex items-center justify-center">
-                        <Car className="h-4 w-4 text-blue-500" />
-                      </div>
-                      <span className="text-sm font-semibold text-muted-foreground">Pollution Control</span>
-                    </div>
-                    <p className="text-3xl font-black text-foreground">
-                      -{secondaryMetrics.carEquivalent}
-                    </p>
-                    <p className="text-xs text-muted-foreground">Equivalent cars removed (emissions)</p>
-                  </div>
-                </div>
-              </Card>
+              <FeasibilityAnalysis metrics={secondaryMetrics} />
             )}
 
           </div>

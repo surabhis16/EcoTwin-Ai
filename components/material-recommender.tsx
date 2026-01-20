@@ -1,14 +1,12 @@
-
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Layers, MapPin, TrendingDown, TrendingUp, Leaf, Loader2, RefreshCw } from "lucide-react"
 import { useState, useEffect } from "react"
 
-// --- FIX 1: Updated Interface to match Python Backend Keys ---
 interface MaterialImpact {
   tempChange: number
   co2Reduction: number
-  sustainabilityScore: number // Changed from 'sustainabilityChange'
+  sustainabilityScore: number
 }
 
 interface Material {
@@ -18,7 +16,7 @@ interface Material {
   final_score: number
   cooling_index: number
   voc_rating: number
-  embodied_carbon: number // Changed from 'transport_adjusted_carbon'
+  embodied_carbon: number
   predicted_impact: MaterialImpact
 }
 
@@ -121,7 +119,7 @@ export default function MaterialRecommender({ selectedZone, onMaterialApplied }:
         },
         coordinates: { lon: 77.5946, lat: 12.9716 }
       }
-      
+
       // @ts-ignore
       onMaterialApplied(materialSimulationData)
     }
@@ -138,15 +136,14 @@ export default function MaterialRecommender({ selectedZone, onMaterialApplied }:
   }
 
   const formatHealth = (voc: number): string => {
-    const healthScore = Math.max(0, 100 - (voc || 0)) // Safety check
+    const healthScore = Math.max(0, 100 - (voc || 0))
     return `${healthScore.toFixed(0)}%`
   }
 
   const formatCooling = (coolingIndex: number): string => {
-    return ((coolingIndex || 0) * 10).toFixed(1) // Safety check
+    return ((coolingIndex || 0) * 10).toFixed(1)
   }
 
-  // --- FIX 2: Added Safety Check for undefined values ---
   const formatCarbon = (carbon: number | undefined): string => {
     if (carbon === undefined || carbon === null) return "N/A"
     return carbon.toFixed(2)
@@ -167,16 +164,16 @@ export default function MaterialRecommender({ selectedZone, onMaterialApplied }:
       {selectedZone && (
         <div className="mb-4 flex gap-2">
           {availableApplications.length > 0 ? availableApplications.map((app) => (
-             <Button
-             key={app}
-             size="sm"
-             variant={application === app ? "default" : "outline"}
-             onClick={() => setApplication(app)}
-           >
-             {app}
-           </Button>
+            <Button
+              key={app}
+              size="sm"
+              variant={application === app ? "default" : "outline"}
+              onClick={() => setApplication(app)}
+            >
+              {app}
+            </Button>
           )) : (
-            // Fallback if list is empty
+            // fallback
             ["Wall", "Roof", "Flooring"].map((app) => (
               <Button
                 key={app}
@@ -188,7 +185,7 @@ export default function MaterialRecommender({ selectedZone, onMaterialApplied }:
               </Button>
             ))
           )}
-          
+
           {selectedZone && (
             <Button
               size="sm"
@@ -240,7 +237,6 @@ export default function MaterialRecommender({ selectedZone, onMaterialApplied }:
                 <p className="text-xs text-muted-foreground">Score</p>
               </div>
               <p className="text-sm font-bold text-primary">
-                {/* FIX 3: Updated to sustainabilityScore */}
                 +{appliedMaterial.predicted_impact.sustainabilityScore.toFixed(0)}
               </p>
             </div>
@@ -290,7 +286,6 @@ export default function MaterialRecommender({ selectedZone, onMaterialApplied }:
                 </div>
                 <div className="p-2 rounded bg-background/50">
                   <p className="text-muted-foreground mb-1">Carbon</p>
-                  {/* FIX 4: Using embodied_carbon */}
                   <p className="font-bold">{formatCarbon(material.embodied_carbon)}</p>
                 </div>
               </div>

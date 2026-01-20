@@ -9,30 +9,26 @@ import pandas as pd
 import numpy as np
 import joblib
 from sklearn.preprocessing import MinMaxScaler
-import traceback # Added for better error logging
+import traceback 
 
 load_dotenv()
 
 router = APIRouter(prefix="/api/materials", tags=["materials"])
 
-# --- DATABASE CONNECTION (Optimized for Stability) ---
 engine = create_engine(
     os.getenv("DATABASE_URL"), 
-    pool_pre_ping=True,  # Checks connection before use (Fixes "server closed connection" error)
-    pool_recycle=3600    # Refreshes connection every hour
+    pool_pre_ping=True, 
+    pool_recycle=3600    
 )
 
-# --- 1. Load the Trained ML Model ---
 model_path = "models/climate_material_model.pkl"
 rf_model = None
 
 try:
     rf_model = joblib.load(model_path)
-    print(f"ML Model loaded successfully from {model_path}")
 except Exception as e:
-    print(f"WARNING: Could not load ML model: {e}. Recommendations will fail without it.")
+    print(f"Could not load ML model: {e}.")
 
-# --- 2. Data Structures ---
 class MaterialRequest(BaseModel):
     ward_name: str
     application: str = "Wall"
@@ -55,10 +51,9 @@ class MaterialResponse(BaseModel):
     voc_rating: float
     predicted_impact: Dict[str, float]
 
-# --- 3. Helper Functions ---
 
+# maps db schema columns to the exact feature names used training
 def prepare_features_for_model(df: pd.DataFrame) -> pd.DataFrame:
-    """ Maps Database Schema columns to the exact Feature Names used during Model Training. """
     column_mapping = {
         "thermal_conductivity": "Thermal_Conductivity_W_mK",
         "specific_heat": "Specific_Heat_kJ_kgK",
@@ -85,8 +80,8 @@ def prepare_features_for_model(df: pd.DataFrame) -> pd.DataFrame:
             
     return df_mapped[required_features]
 
+# fetches Ward LST and maps it to model classes
 def get_ward_heat_zone(ward_name: str) -> str:
-    """ Fetches Ward LST and maps it to Model Classes: 'High', 'Medium', 'Low'. """
     try:
         with engine.connect() as conn:
             query = text("""
@@ -124,14 +119,14 @@ def get_heat_multiplier_from_lst(ward_name: str) -> float:
         else: return 1.75
     except: return 1.25
 
-# --- 4. Main Recommendation Endpoint ---
+# main recc endpoint
 @router.post("/recommend", response_model=List[MaterialResponse])
 async def recommend_materials(request: MaterialRequest):
     try:
         if rf_model is None:
             raise HTTPException(status_code=500, detail="ML Model is not loaded.")
 
-        # A. Fetch all materials from DB
+        # fetch all materials from DB
         with engine.connect() as conn:
             query = text("SELECT * FROM materials")
             result = conn.execute(query).fetchall()
@@ -139,14 +134,14 @@ async def recommend_materials(request: MaterialRequest):
         if not result:
             raise HTTPException(status_code=404, detail="No materials found in database")
             
-        # Convert to DataFrame
+        # convert to DataFrame
         df = pd.DataFrame([dict(row._mapping) for row in result])
         
-        # B. Get Ward Heat Zone (Target)
+        # get Ward Heat Zone (Target)
         target_zone = get_ward_heat_zone(request.ward_name)
         heat_multiplier = get_heat_multiplier_from_lst(request.ward_name)
         
-        # C. ML PREDICTION
+        # ml prediction
         X_features = prepare_features_for_model(df)
         df['Predicted_Zone'] = rf_model.predict(X_features)
         
@@ -160,30 +155,30 @@ async def recommend_materials(request: MaterialRequest):
                 suitable_df["applications"].str.contains(request.application, case=False, na=False)
             ].copy()
 
-        # --- D. FALLBACK STRATEGY (The Fix for 404/500 Errors) ---
+        # fallback
         if suitable_df.empty:
-            print(f"⚠️ No exact match for {target_zone} & {request.application}. Switching to Fallback Strategy.")
+            print(f"No exact match for {target_zone} & {request.application}. Switching to Fallback.")
             
-            # Fallback 1: Ignore Heat Zone, just match Application (e.g. "Wall")
-            # We prioritize materials with high cooling index since the original goal failed
+            # ignore Heat Zone, just match Application (e.g. "Wall")
+            # prioritize materials with high cooling index since the original goal failed
             suitable_df = df[
                 df["usage_type"].str.contains(request.application, case=False, na=False) |
                 df["applications"].str.contains(request.application, case=False, na=False)
             ].copy()
             
-            # Sort fallback by cooling index so we still give good results
+            # sort fallback by cooling index 
             if "cooling_index" in suitable_df.columns:
                  suitable_df = suitable_df.sort_values(by="cooling_index", ascending=False)
 
         if suitable_df.empty:
-            print(f"⚠️ Application match failed for {request.application}. Switching to Global Top Cooling.")
-            # Fallback 2: If even application fails, just take top cooling materials generally
+            print(f"Application match failed for {request.application}. Switching to Global Top Cooling.")
+            # if even application fails, just take top cooling materials generally
             if "cooling_index" in df.columns:
                  suitable_df = df.sort_values(by="cooling_index", ascending=False).head(10).copy()
             else:
                  suitable_df = df.sort_values(by="solar_reflective_index", ascending=False).head(10).copy()
 
-        # E. RANKING (User Weights)
+        # ranking (user weights)
         scaler = MinMaxScaler()
         prefs = request.preferences
         
@@ -218,8 +213,6 @@ async def recommend_materials(request: MaterialRequest):
                 if col in suitable_df.columns:
                     suitable_df["final_score"] += suitable_df[col] * (prefs[key] / total_weight)
         
-        # F. Formatting Response
-        # Safety check: if fallback completely failed (very rare), return empty list
         if suitable_df.empty:
              return []
 
@@ -235,7 +228,7 @@ async def recommend_materials(request: MaterialRequest):
                 usage_type=row["usage_type"],
                 price_inr_per_m3=float(row["price_inr_per_m3"]),
                 final_score=round(float(row.get("final_score", 0)), 2),
-                predicted_zone_suitability=row.get("Predicted_Zone", "General"), # Fallback default
+                predicted_zone_suitability=row.get("Predicted_Zone", "General"), 
                 embodied_carbon=float(row["embodied_carbon"]),
                 cooling_index=float(row.get("cooling_index", 0)),
                 voc_rating=float(row.get("voc_rating", 0)),
@@ -249,11 +242,10 @@ async def recommend_materials(request: MaterialRequest):
         return results
 
     except Exception as e:
-        print("CRITICAL ERROR IN RECOMMENDATION:")
-        traceback.print_exc() # Print full error to console for debugging
+        print("Error in Recommendation:")
+        traceback.print_exc() 
         raise HTTPException(status_code=500, detail=str(e))
 
-# --- 5. Auxiliary Endpoints (Unchanged) ---
 
 @router.get("/applications")
 async def get_applications():
