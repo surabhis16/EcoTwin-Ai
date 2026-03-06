@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Globe, Layers, Building2, MapPin, AlertCircle, Maximize2, Minimize2 } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
+import { mapBus } from "@/lib/mapEventBus"
 
 interface LayerState {
   buildings: boolean
@@ -16,10 +17,9 @@ interface Visualization3DProps {
   onWardSelect?: (wardData: any) => void
 }
 
-// global viewer reference for external access
 let globalViewerRef: any = null
 
-let materialEntitiesRef: any[] = []
+export let materialEntitiesRef: any[] = []
 
 export const updateUHIForSimulation = async (simulationData: any) => {
   if (!globalViewerRef) {
@@ -32,17 +32,16 @@ export const updateUHIForSimulation = async (simulationData: any) => {
 
   console.log("Updating map with simulation:", simulationData);
 
-  // clear previous visualizations
   materialEntitiesRef.forEach(entity => {
     try {
       globalViewerRef.entities.remove(entity);
     } catch (e) {
       // entity already removed
-    }
+    }3
   });
   materialEntitiesRef = [];
 
-  // main simulation area (cyan circle)
+  // main simulation area 
   const simulationMarker = globalViewerRef.entities.add({
     position: Cesium.Cartesian3.fromDegrees(lon, lat),
     ellipse: {
@@ -269,6 +268,13 @@ export function Visualization3D({ onWardSelect }: Visualization3DProps) {
       }
 
       setSelectedWard(wardData.name)
+      mapBus.emit({
+        type: "WARD_CLICKED",
+        wardId: entity.ward_number,
+        wardName: wardData.ward_name,
+        lst: wardData.lst_before,
+        ndvi: wardData.ndvi_before
+      })
     } catch (err) {
       console.error("Failed to fetch ward data:", err)
       setError(err instanceof Error ? err.message : "Failed to fetch ward data")
@@ -529,6 +535,112 @@ export function Visualization3D({ onWardSelect }: Visualization3DProps) {
 
     document.addEventListener('fullscreenchange', handleFullscreenChange)
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange)
+  }, [])
+
+  // Add inside Visualization3D component:
+  useEffect(() => {
+    const unsubscribe = mapBus.subscribe(async (event) => {
+      const Cesium = await import("cesium")
+      const viewer = viewerRef.current
+      if (!viewer) return
+
+      if (event.type === "FLY_TO_WARD") {
+        viewer.camera.flyTo({
+          destination: Cesium.Cartesian3.fromDegrees(event.lon, event.lat, 6000),
+          duration: 2,
+          orientation: {
+            heading: Cesium.Math.toRadians(0),
+            pitch: Cesium.Math.toRadians(-45),
+            roll: 0,
+          }
+        })
+      }
+
+      if (event.type === "SHOW_SIMULATION") {
+        updateUHIForSimulation(event.simulationData)
+      }
+
+      if (event.type === "SHOW_MULTI_SIMULATION") {
+        // Clear previous first
+        materialEntitiesRef.forEach(e => {
+          try { globalViewerRef.entities.remove(e) } catch { }
+        })
+        materialEntitiesRef = []
+
+        // Draw a marker for each simulated ward
+        for (const sim of event.simulations) {
+          const { lon, lat } = sim.coordinates
+          const cooling = sim.temperatureReduction
+
+          // Color by cooling intensity
+          const color = cooling > 3
+            ? Cesium.Color.LIME
+            : cooling > 1.5
+              ? Cesium.Color.CYAN
+              : Cesium.Color.YELLOW
+
+          const circle = globalViewerRef.entities.add({
+            position: Cesium.Cartesian3.fromDegrees(lon, lat),
+            ellipse: {
+              semiMinorAxis: 2000,
+              semiMajorAxis: 2000,
+              material: color.withAlpha(0.35),
+              outline: true,
+              outlineColor: color,
+              outlineWidth: 2,
+              heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+            },
+            description: buildDescription(sim)  // reuse your existing function
+          })
+          materialEntitiesRef.push(circle)
+
+          // Floating label showing cooling
+          const label = globalViewerRef.entities.add({
+            position: Cesium.Cartesian3.fromDegrees(lon, lat, 150),
+            label: {
+              text: `${sim.wardName}\n-${cooling.toFixed(2)}°C`,
+              font: 'bold 14px sans-serif',
+              fillColor: Cesium.Color.WHITE,
+              backgroundColor: color.withAlpha(0.9),
+              backgroundPadding: new Cesium.Cartesian2(8, 5),
+              style: Cesium.LabelStyle.FILL,
+              verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+              heightReference: Cesium.HeightReference.RELATIVE_TO_GROUND,
+              disableDepthTestDistance: Number.POSITIVE_INFINITY,
+            }
+          })
+          materialEntitiesRef.push(label)
+        }
+
+        // Fly to show all markers — use first ward's coordinates
+        if (event.simulations.length > 0) {
+          const { lon, lat } = event.simulations[0].coordinates
+          viewer.camera.flyTo({
+            destination: Cesium.Cartesian3.fromDegrees(lon, lat, 20000),
+            duration: 2.5,
+          })
+        }
+      }
+
+      if (event.type === "HIGHLIGHT_WARD") {
+        if (wardsDataRef.current) {
+          for (const entity of wardsDataRef.current.entities.values) {
+            if (entity.ward_number === event.wardId) {
+              const original = entity.polygon.material
+              entity.polygon.material = new Cesium.ColorMaterialProperty(
+                Cesium.Color.CYAN.withAlpha(0.8)
+              )
+              setTimeout(() => {
+                entity.polygon.material = original
+              }, 3000)
+              break
+            }
+          }
+        }
+      }
+    })
+
+    return () => unsubscribe()
   }, [])
 
   const toggleLayer = (layerName: keyof LayerState) => {
