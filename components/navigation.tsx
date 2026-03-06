@@ -23,7 +23,7 @@ export function Navigation() {
         </Link>
 
         <div className="hidden md:flex items-center gap-2">
-          <Button variant="ghost" asChild className="hover:bg-primary/5"><Link href="/dashboard">Dashboard</Link></Button>
+          
           <Button variant="ghost" asChild className="hover:bg-primary/5"><Link href="#features">Features</Link></Button>
           <div className="w-px h-6 bg-border/50 mx-2" />
 
