@@ -38,7 +38,7 @@ def export_pdf(payload: dict):
 
     implementation_cost_cr = round(
         (area_m2 * coverage_percent * price_per_sqm) / 10_000_000, 2
-    )
+    )*10
 
     # pdf setup
     temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
