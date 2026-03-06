@@ -5,7 +5,7 @@ import { InteractiveMap } from "@/components/interactive-map"
 import { SentimentAnalysis } from "@/components/sentiment-analysis"
 import MaterialRecommender from "@/components/material-recommender"
 import PolicySimulationEngine from "@/components/policy-simulation-engine"
-import { FeasibilityAnalysis } from "@/components/feasibility-analysis" // Import the separate component
+import { FeasibilityAnalysis } from "@/components/feasibility-analysis"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -277,7 +277,7 @@ export default function DashboardPage() {
               </Button>
             </div>
           </div>
-  
+
         </div>
 
         <div className="grid gap-6 lg:grid-cols-2">
