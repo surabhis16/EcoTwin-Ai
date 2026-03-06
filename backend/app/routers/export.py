@@ -50,8 +50,8 @@ def export_pdf(payload: dict):
         leftMargin=50,
         topMargin=50,
         bottomMargin=50,
-        title="EcoTwin-AI Sustainability Report",
-        author="EcoTwin-AI Platform"
+        title="UrbanCool-AI Sustainability Report",
+        author="UrbanCool-AI Platform"
     )
 
     styles = getSampleStyleSheet()
@@ -89,7 +89,7 @@ def export_pdf(payload: dict):
     story = []
 
     # title
-    story.append(Paragraph("EcoTwin-AI Sustainability Report", styles["ReportTitle"]))
+    story.append(Paragraph("UrbanCool Report", styles["ReportTitle"]))
     story.append(Paragraph(
         f"Generated on {datetime.now().strftime('%d %B %Y, %H:%M')}",
         styles["Body"]
@@ -206,5 +206,5 @@ def export_pdf(payload: dict):
     return FileResponse(
         temp_file.name,
         media_type="application/pdf",
-        filename="EcoTwin_Sustainability_Report.pdf"
+        filename="UrbanCool_Report.pdf"
     )
