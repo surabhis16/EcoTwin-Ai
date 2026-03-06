@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import { IBM_Plex_Sans } from "next/font/google"
 import "./globals.css"
 import HydrationGate from "@/components/hydration-gate"
+import { AuthProvider } from "@/contexts/auth-context"
 
 const ibmPlexSans = IBM_Plex_Sans({
   subsets: ["latin"],
@@ -25,7 +26,9 @@ export default function RootLayout({
       </head>
       <body className={`${ibmPlexSans.className} antialiased`}>
         <HydrationGate>
-          {children}
+          <AuthProvider>
+            {children}
+          </AuthProvider>
         </HydrationGate>
       </body>
     </html>
