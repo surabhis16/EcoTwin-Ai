@@ -9,8 +9,8 @@ const ibmPlexSans = IBM_Plex_Sans({
 })
 
 export const metadata: Metadata = {
-  title: "EcoTwin AI - Urban Sustainability Platform",
-  description: "Digital twin technology for data-driven urban planning in Bengaluru",
+  title: "UrbanCool AI - Urban Sustainability Platform",
+  description: "UHI technology for data-driven urban planning in Bengaluru",
 }
 
 export default function RootLayout({

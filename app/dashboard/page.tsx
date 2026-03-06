@@ -276,14 +276,7 @@ export default function DashboardPage() {
               </Button>
             </div>
           </div>
-          <Button
-            onClick={toggleComparison}
-            disabled={!simulationActive}
-            variant={comparisonMode ? "default" : "outline"}
-            className="gap-2"
-          >
-            <SplitSquareHorizontal className="h-4 w-4" /> Comparative View
-          </Button>
+  
         </div>
 
         <div className="grid gap-6 lg:grid-cols-2">
@@ -396,7 +389,7 @@ export default function DashboardPage() {
 
                       const a = document.createElement("a");
                       a.href = url;
-                      a.download = `EcoTwin_Report_${simulationData.wardName}.pdf`;
+                      a.download = `UHI_Report_${simulationData.wardName}.pdf`;
                       a.click();
                     }}
                   >

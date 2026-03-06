@@ -29,7 +29,6 @@ export default function PolicySimulationEngine({ onSimulate }: PolicySimulationE
     { id: 3, name: "Select Materials" },
     { id: 4, name: "Configure Intensity" },
     { id: 5, name: "Review & Simulate" },
-    { id: 6, name: "Results" },
   ]
 
   useEffect(() => {
