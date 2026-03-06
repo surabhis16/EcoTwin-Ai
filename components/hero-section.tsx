@@ -7,14 +7,11 @@ import { ArrowRight, Play, Globe2 } from "lucide-react"
 import { useAuth } from "@/contexts/auth-context"
 import { LoginModal } from "@/components/login-modal"
 import { useRouter } from "next/navigation"
-import { LogOut } from "lucide-react"
-
-import Link from "next/link"
 
 export function HeroSection() {
   const [mounted, setMounted] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
-  const { user, signOut } = useAuth()
+  const { user} = useAuth()
   const router = useRouter()
   const [showLogin, setShowLogin] = useState(false)
 
@@ -116,16 +113,6 @@ export function HeroSection() {
             Watch Demo
           </Button>
         </motion.div>
-
-        {user && (
-          <Button
-            size="lg" variant="ghost"
-            className="text-sm text-muted-foreground"
-            onClick={signOut}
-          >
-            <LogOut className="h-4 w-4 mr-2" /> Sign Out
-          </Button>
-        )}
 
         {/* Features */}
         <motion.div

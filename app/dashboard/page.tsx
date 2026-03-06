@@ -1,5 +1,9 @@
 "use client"
 
+import { useAuth } from "@/contexts/auth-context"
+import { useRouter } from "next/navigation"
+import { useEffect } from "react"
+import { LogOut } from "lucide-react"
 import { DashboardNav } from "@/components/dashboard-nav"
 import { InteractiveMap } from "@/components/interactive-map"
 import { SentimentAnalysis } from "@/components/sentiment-analysis"
@@ -52,6 +56,9 @@ const Visualization3D = dynamic(
 )
 
 export default function DashboardPage() {
+  const { user, loading, signOut } = useAuth()
+  const router = useRouter()
+
   const [viewMode, setViewMode] = useState<"baseline" | "simulated">("baseline")
   const [comparisonMode, setComparisonMode] = useState(false)
   const [simulationActive, setSimulationActive] = useState(false)
@@ -61,6 +68,12 @@ export default function DashboardPage() {
   const [selectedWardData, setSelectedWardData] = useState<any>(null)
   const [selectedSentimentWard, setSelectedSentimentWard] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+        if (!loading && !user) router.push("/")
+      }, [user, loading])
+
+      if (loading || !user) return null
 
   const calculateSecondaryMetrics = (data: SimulationData) => {
     const energySavingsPercent = (data.temperatureReduction * 7.5).toFixed(1)
@@ -201,6 +214,18 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-background">
       <DashboardNav />
+       {/* Signout bar */}
+      <div className="border-b border-border/40 bg-background/80 backdrop-blur-sm px-6 py-2 flex justify-end items-center gap-3">
+        <span className="text-sm text-muted-foreground">{user.email}</span>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={async () => { await signOut(); router.push("/") }}
+          className="text-muted-foreground hover:text-foreground gap-2"
+        >
+          <LogOut className="h-4 w-4" /> Sign Out
+        </Button>
+      </div>
       <div className="container mx-auto px-4 py-8">
         <div className="mb-8">
           <h1 className="text-4xl font-black">Policy Analysis & Simulation Dashboard</h1>

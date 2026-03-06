@@ -27,7 +27,7 @@ export function LoginModal({ onClose }: { onClose: () => void }) {
       setLoading(false)
     } else {
       onClose()
-      router.push("/dashboard")
+      router.push("/dashboard")  // ← this handles the redirect
     }
   }
 
