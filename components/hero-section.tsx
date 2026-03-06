@@ -4,11 +4,19 @@ import { useEffect, useState, useRef } from "react"
 import { motion, useScroll, useTransform, useSpring } from "framer-motion"
 import { Button } from "@/components/ui/button"
 import { ArrowRight, Play, Globe2 } from "lucide-react"
+import { useAuth } from "@/contexts/auth-context"
+import { LoginModal } from "@/components/login-modal"
+import { useRouter } from "next/navigation"
+import { LogOut } from "lucide-react"
+
 import Link from "next/link"
 
 export function HeroSection() {
   const [mounted, setMounted] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
+  const { user, signOut } = useAuth()
+  const router = useRouter()
+  const [showLogin, setShowLogin] = useState(false)
 
   useEffect(() => {
     setMounted(true)
@@ -94,11 +102,13 @@ export function HeroSection() {
           transition={{ duration: 0.8, delay: 0.6 }}
           className="flex flex-col sm:flex-row gap-4 justify-center items-center"
         >
-          <Button size="lg" asChild className="group text-lg px-8 py-7 rounded-full transition-all hover:scale-105">
-            <Link href="/dashboard">
-              Explore Platform
-              <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />
-            </Link>
+          <Button
+            size="lg"
+            className="group text-lg px-8 py-7 rounded-full transition-all hover:scale-105"
+            onClick={() => user ? router.push("/dashboard") : setShowLogin(true)}
+>
+            {user ? "Go to Dashboard" : "Explore Platform"}
+            <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />
           </Button>
 
           <Button size="lg" variant="outline" className="group text-lg px-8 py-7 rounded-full border-primary/20 hover:bg-primary/5 backdrop-blur-sm">
@@ -106,6 +116,16 @@ export function HeroSection() {
             Watch Demo
           </Button>
         </motion.div>
+
+        {user && (
+          <Button
+            size="lg" variant="ghost"
+            className="text-sm text-muted-foreground"
+            onClick={signOut}
+          >
+            <LogOut className="h-4 w-4 mr-2" /> Sign Out
+          </Button>
+        )}
 
         {/* Features */}
         <motion.div
@@ -127,6 +147,7 @@ export function HeroSection() {
           ))}
         </motion.div>
       </div>
+      {showLogin && <LoginModal onClose={() => setShowLogin(false)} />}
     </section>
   )
 }
