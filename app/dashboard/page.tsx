@@ -5,7 +5,7 @@ import { InteractiveMap } from "@/components/interactive-map"
 import { SentimentAnalysis } from "@/components/sentiment-analysis"
 import MaterialRecommender from "@/components/material-recommender"
 import PolicySimulationEngine from "@/components/policy-simulation-engine"
-import { FeasibilityAnalysis } from "@/components/feasibility-analysis" // Import the separate component
+import { FeasibilityAnalysis } from "@/components/feasibility-analysis"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -277,14 +277,7 @@ export default function DashboardPage() {
               </Button>
             </div>
           </div>
-          <Button
-            onClick={toggleComparison}
-            disabled={!simulationActive}
-            variant={comparisonMode ? "default" : "outline"}
-            className="gap-2"
-          >
-            <SplitSquareHorizontal className="h-4 w-4" /> Comparative View
-          </Button>
+
         </div>
 
         <div className="grid gap-6 lg:grid-cols-2">
@@ -397,7 +390,7 @@ export default function DashboardPage() {
 
                       const a = document.createElement("a");
                       a.href = url;
-                      a.download = `EcoTwin_Report_${simulationData.wardName}.pdf`;
+                      a.download = `UHI_Report_${simulationData.wardName}.pdf`;
                       a.click();
                     }}
                   >

@@ -9,6 +9,7 @@ import { LoginModal } from "@/components/login-modal"
 import { useRouter } from "next/navigation"
 import { LogOut } from "lucide-react"
 
+import Link from "next/link"
 
 export function HeroSection() {
   const [mounted, setMounted] = useState(false)
@@ -60,7 +61,7 @@ export function HeroSection() {
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
             <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
           </span>
-          Live Digital Twin: Bengaluru
+          Live UHI Interpretation
         </motion.div>
 
         {/* Main Title */}
@@ -70,7 +71,7 @@ export function HeroSection() {
           transition={{ duration: 0.8, delay: 0.2 }}
           className="text-5xl md:text-7xl lg:text-8xl font-extrabold tracking-tight mb-6 text-balance"
         >
-          EcoTwin AI: The Future of{" "}
+          UrbanCool AI: The Future of{" "}
           <span className="relative inline-block">
             <span className="bg-clip-text text-transparent bg-linear-to-r from-emerald-400 to-cyan-500">
               Urban Sustainability

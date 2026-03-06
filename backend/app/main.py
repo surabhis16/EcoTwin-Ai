@@ -3,9 +3,9 @@ load_dotenv()
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import uhi_prediction, material_recommendation, sentiment, export
-from app.routers import agent_router
 from app.routers import auth
+from app.routers import uhi_prediction, material_recommendation, sentiment, export, agent_router
+
 
 app = FastAPI(title="EcoTwin AI API")
 
@@ -18,13 +18,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# include uhi router
+#uhi router
 app.include_router(uhi_prediction.router)
-# include material recc router
+#material recc router
 app.include_router(material_recommendation.router)
-#include sentiment router
+#sentiment router
 app.include_router(sentiment.router) 
-#include export router [exporting data]
+#export router [exporting data]
 app.include_router(export.router)
 #agent router
 app.include_router(agent_router.router)

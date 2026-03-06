@@ -21,11 +21,17 @@ class ChatMessage(BaseModel):
 
 @router.post("/chat")
 async def chat(payload: ChatMessage):
-    await session_service.create_session(
+    existing = await session_service.list_sessions(
         app_name="bengaluru_climate",
-        user_id=payload.session_id,
-        session_id=payload.session_id
+        user_id=payload.session_id
     )
+    
+    if not existing or not existing.sessions:
+        await session_service.create_session(
+            app_name="bengaluru_climate",
+            user_id=payload.session_id,
+            session_id=payload.session_id
+        )
 
     user_msg = types.Content(
         role="user",

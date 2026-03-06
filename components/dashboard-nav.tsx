@@ -25,14 +25,11 @@ export function DashboardNav() {
                 />
               </svg>
             </div>
-            <span className="text-xl font-bold">EcoTwin AI</span>
+            <span className="text-xl font-bold">UrbanCool AI</span>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <Button variant="ghost">Settings</Button>
-          
-        </div>
+
       </div>
     </nav>
   )
