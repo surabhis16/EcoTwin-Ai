@@ -18,7 +18,7 @@ export function Navigation() {
             <Globe className="h-6 w-6 text-primary-foreground" />
           </div>
           <span className="text-xl font-bold tracking-tight bg-clip-text text-transparent bg-linear-to-r from-foreground to-foreground/70">
-            EcoTwin AI
+            UrbanCool AI
           </span>
         </Link>
 
@@ -26,9 +26,7 @@ export function Navigation() {
           <Button variant="ghost" asChild className="hover:bg-primary/5"><Link href="/dashboard">Dashboard</Link></Button>
           <Button variant="ghost" asChild className="hover:bg-primary/5"><Link href="#features">Features</Link></Button>
           <div className="w-px h-6 bg-border/50 mx-2" />
-          <Button className="rounded-full px-6 bg-primary hover:bg-primary/90 shadow-md shadow-primary/10 transition-all active:scale-95">
-            Get Started
-          </Button>
+
         </div>
       </div>
     </motion.nav>

@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from "react"
 import { motion, useScroll, useTransform, useSpring } from "framer-motion"
 import { Button } from "@/components/ui/button"
 import { ArrowRight, Play, Globe2 } from "lucide-react"
+import Link from "next/link"
 
 export function HeroSection() {
   const [mounted, setMounted] = useState(false)
@@ -52,7 +53,7 @@ export function HeroSection() {
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
             <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
           </span>
-          Live Digital Twin: Bengaluru
+          Live UHI Interpretation
         </motion.div>
 
         {/* Main Title */}
@@ -62,7 +63,7 @@ export function HeroSection() {
           transition={{ duration: 0.8, delay: 0.2 }}
           className="text-5xl md:text-7xl lg:text-8xl font-extrabold tracking-tight mb-6 text-balance"
         >
-          EcoTwin AI: The Future of{" "}
+          UrbanCool AI: The Future of{" "}
           <span className="relative inline-block">
             <span className="bg-clip-text text-transparent bg-linear-to-r from-emerald-400 to-cyan-500">
               Urban Sustainability
@@ -93,9 +94,11 @@ export function HeroSection() {
           transition={{ duration: 0.8, delay: 0.6 }}
           className="flex flex-col sm:flex-row gap-4 justify-center items-center"
         >
-          <Button size="lg" className="group text-lg px-8 py-7 rounded-full transition-all hover:scale-105">
-            Explore Platform
-            <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />
+          <Button size="lg" asChild className="group text-lg px-8 py-7 rounded-full transition-all hover:scale-105">
+            <Link href="/dashboard">
+              Explore Platform
+              <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />
+            </Link>
           </Button>
 
           <Button size="lg" variant="outline" className="group text-lg px-8 py-7 rounded-full border-primary/20 hover:bg-primary/5 backdrop-blur-sm">
