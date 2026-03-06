@@ -23,6 +23,7 @@ import {
 import { useState } from "react"
 import dynamic from "next/dynamic"
 import { updateUHIForSimulation } from "@/components/visualization-3d"
+import AgentChat from "@/components/agentchat"
 
 interface SimulationData {
   wardId: number
@@ -430,6 +431,10 @@ export default function DashboardPage() {
               selectedZone={selectedWardData?.ward_name || selectedZone}
               onMaterialApplied={handleMaterialApplied}
             />
+          </div>
+
+          <div className="lg:col-span-2">
+            <AgentChat />
           </div>
 
           <div className="lg:col-span-2">

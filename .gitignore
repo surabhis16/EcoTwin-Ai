@@ -24,6 +24,8 @@ data/
 *.pkl
 *.joblib
 
+.adk/
+
 dist/
 build/
 
