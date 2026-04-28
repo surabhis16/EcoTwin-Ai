@@ -5,6 +5,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Slider } from "@/components/ui/slider"
 import { Sparkles, ChevronRight, Check, Loader2, Package, Info } from "lucide-react"
 import { useState, useEffect } from "react"
+import XAIExplanationPanel from "@/components/xai-panel"
 
 interface PolicySimulationEngineProps {
   onSimulate: (data: any) => void
@@ -22,6 +23,8 @@ export default function PolicySimulationEngine({ onSimulate }: PolicySimulationE
   const [materials, setMaterials] = useState<any[]>([])
   const [materialsLoading, setMaterialsLoading] = useState(false)
   const [simulationResult, setSimulationResult] = useState<any>(null)
+  const [xaiData, setXaiData] = useState<any>(null)
+  const [xaiLoading, setXaiLoading] = useState(false)
 
   const steps = [
     { id: 1, name: "Select Ward" },
@@ -105,20 +108,31 @@ export default function PolicySimulationEngine({ onSimulate }: PolicySimulationE
 
     try {
       const intensityFactor = intensity[0] / 100
-      let projectedNdviIncrease = 0
 
-      // map intensity to realistic max NDVI gains
+      let projectedNdviIncrease = 0
       if (intervention === "green") projectedNdviIncrease = intensityFactor * 0.25
       else if (intervention === "cooling") projectedNdviIncrease = intensityFactor * 0.15
       else if (intervention === "materials") projectedNdviIncrease = intensityFactor * 0.05
 
-      // call backend
+      let projectedAlbedoIncrease = 0
+      if (intervention === "materials") projectedAlbedoIncrease = intensityFactor * 0.15
+      else if (intervention === "cooling") projectedAlbedoIncrease = intensityFactor * 0.08
+      // green infrastructure doesn't meaningfully change albedo
+
+      const interventionLabel = intervention === "green"
+        ? "Green Infrastructure Expansion"
+        : intervention === "cooling"
+          ? "Urban Cooling Corridors"
+          : "Sustainable Material Mandate"
+
       const res = await fetch('http://localhost:8000/api/uhi/simulate-ward', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ward_id: parseInt(wardId),
-          intensity: projectedNdviIncrease
+          intensity: projectedNdviIncrease,
+          albedo_increase: projectedAlbedoIncrease,
+          intervention_type: interventionLabel
         })
       })
 
@@ -136,30 +150,19 @@ export default function PolicySimulationEngine({ onSimulate }: PolicySimulationE
       }
       const ndviGain = Math.max(0, finalNdviAfter - ndviBefore)
 
-      // realistic phys calculations
+      let airTempReduction = prediction.cooling_effect
 
-      // vegetation Cooling (Air Temp)
-      // +0.1 NDVI ≈ -0.5°C Air Temp
-      let airTempReduction = ndviGain * 4.5;
-
-      // material Cooling (Surface -> Air)
       let materialCooling = 0;
       let materialEmbodiedCO2 = 0;
 
       if (selectedMaterial) {
         const matImpact = selectedMaterial.predicted_impact?.tempChange || 0;
-        // Scale down surface temp impact to air temp (approx 20-25%)
         materialCooling = Math.abs(matImpact) * 0.25;
-
-        // Calculate One-time Embodied Carbon Avoidance
         materialEmbodiedCO2 = (selectedMaterial.predicted_impact?.co2Reduction || 0) * areaHectares * 0.01;
       }
 
-      // Total Air Temp Reduction
       const totalCooling = airTempReduction + materialCooling;
 
-      // Biological Carbon Sequestration (Annual)
-      // 1 hectare of urban greening ~ 3.5 tonnes CO2/year
       const bioSequestration = (ndviGain / 0.2) * areaHectares * 3.5;
 
       const result = {
@@ -169,30 +172,24 @@ export default function PolicySimulationEngine({ onSimulate }: PolicySimulationE
         intensity: intensity[0],
         area_sqkm: areaSqKm,
 
-        // Temp
-        temperatureReduction: totalCooling, // Total Air Temp Drop
-        baseCooling: airTempReduction,      // From Veg
-        materialCooling: materialCooling,   // From Bricks/Roofs
+        temperatureReduction: totalCooling,
+        baseCooling: airTempReduction,
+        materialCooling: materialCooling,
         lstBefore: prediction.lst_before || 35,
 
-        // NDVI
         ndviBefore: ndviBefore,
         ndviAfter: finalNdviAfter,
         ndviGain: ndviGain,
 
-        // Carbon
-        co2Offset: Math.round(bioSequestration),        // Annual (Trees) - displayed in main card
-        materialCO2: Math.round(materialEmbodiedCO2),   // One-time (Materials) - displayed in bonus
+        co2Offset: Math.round(bioSequestration),
+        materialCO2: Math.round(materialEmbodiedCO2),
 
-        // Risk
         risk_before: prediction.risk_before || "Moderate",
         risk_after: totalCooling > 1.0 ? "Low" : (prediction.risk_before || "Moderate"),
 
-        // Equivalents (Based on Annual Sequestration)
         treeEquivalent: Math.round((bioSequestration * 1000) / 22),
         carEquivalent: Math.round(bioSequestration / 4.6),
 
-        // Material
         selectedMaterial: selectedMaterial ? {
           name: selectedMaterial.material_name,
           tempReduction: materialCooling,
@@ -203,6 +200,29 @@ export default function PolicySimulationEngine({ onSimulate }: PolicySimulationE
       }
 
       console.log("Simulation Result:", result)
+
+      // fetch XAI explanation in parallel
+      setXaiLoading(true)
+      try {
+        const xaiRes = await fetch('http://localhost:8000/api/xai/explain-simulation', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ward_id: parseInt(wardId),
+            intensity: projectedNdviIncrease,
+            albedo_increase: projectedAlbedoIncrease,
+            intervention_type: interventionLabel
+          })
+        })
+        const xaiResult = await xaiRes.json()
+        setXaiData(xaiResult)
+      } catch (err) {
+        console.error("XAI fetch failed:", err)
+        setXaiData(null)
+      } finally {
+        setXaiLoading(false)
+      }
+
       setSimulationResult(result)
       onSimulate(result)
       setCurrentStep(6)
@@ -224,6 +244,7 @@ export default function PolicySimulationEngine({ onSimulate }: PolicySimulationE
     setMaterials([])
     setAreaData(null)
     setSimulationResult(null)
+    setXaiData(null)
   }
 
   const canProceed = () => {
@@ -474,7 +495,7 @@ export default function PolicySimulationEngine({ onSimulate }: PolicySimulationE
                   </p>
                 </div>
 
-                {/* Carbon Card- biological seq */}
+                {/* Carbon Card */}
                 <div className="bg-background/50 p-3 rounded-lg border">
                   <p className="text-[10px] uppercase text-muted-foreground font-bold mb-1">Carbon Offset</p>
                   <p className="text-2xl font-black text-blue-500">
@@ -486,7 +507,7 @@ export default function PolicySimulationEngine({ onSimulate }: PolicySimulationE
                 </div>
               </div>
 
-              {/* Material Specific Impact*/}
+              {/* Material Specific Impact */}
               {simulationResult.selectedMaterial && (
                 <div className="w-full p-3 bg-orange-500/10 rounded-lg border border-orange-500/20 mb-4">
                   <p className="text-xs font-bold mb-1 flex items-center gap-2 text-orange-700 dark:text-orange-400">
@@ -527,6 +548,9 @@ export default function PolicySimulationEngine({ onSimulate }: PolicySimulationE
                 </span>
               </div>
             </div>
+
+            {/* XAI panel */}
+            <XAIExplanationPanel xaiData={xaiData} xaiLoading={xaiLoading} />
 
             <Button onClick={handleReset} variant="outline" className="w-full">
               Run New Simulation

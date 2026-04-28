@@ -19,5 +19,7 @@ reportlab>=3.6.0
 
 google-adk>=1.26.0
 
+shap>=0.51.0
+
 # run after installing requirements:
 # python -m spacy download en_core_web_sm

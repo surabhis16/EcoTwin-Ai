@@ -21,6 +21,8 @@ except Exception as e:
 class SimulationInput(BaseModel):
     ward_id: int  # corresponds to 'ward_number' in db
     intensity: float = Field(..., ge=0, le=1.0)
+    albedo_increase: float = Field(default=0.0, ge=0, le=0.5)
+    intervention_type: str = Field(default="green cover enhancement")
 
 # risk assessment
 # Determine heat risk level based on LST
@@ -135,6 +137,8 @@ def simulate_ward(payload: SimulationInput):
     # Apply intervention: increase NDVI based on intensity
     # intensity ranges from 0.0 to 1.0, representing NDVI increase
     ndvi_after = min(ward.baseline_ndvi + payload.intensity, 1.0)
+
+    albedo_after = min(ward.baseline_albedo + payload.albedo_increase, 1.0)
     
     # Predict temperature change using ML model
     # Model predicts LST based on: [ndvi, albedo, lon, lat]
@@ -147,7 +151,7 @@ def simulate_ward(payload: SimulationInput):
     
     df_after = pd.DataFrame([{
         "ndvi": ndvi_after,
-        "albedo": ward.baseline_albedo,
+        "albedo": albedo_after,
         "lon": ward.lon,
         "lat": ward.lat
     }])
@@ -174,7 +178,7 @@ def simulate_ward(payload: SimulationInput):
         # Identification
         "ward_id": payload.ward_id,
         "ward_name": ward.ward_name_en,
-        "intervention": "green cover enhancement",
+        "intervention": payload.intervention_type,
         "intensity": round(payload.intensity * 100, 0),  
         "area_sqkm": float(ward.area_sqkm),
         
@@ -197,6 +201,7 @@ def simulate_ward(payload: SimulationInput):
         
         # Additional Metadata
         "baseline_albedo": round(ward.baseline_albedo, 3),
+        "albedo_after": round(albedo_after, 3),
         "coordinates": {
             "lon": round(ward.lon, 6),
             "lat": round(ward.lat, 6)

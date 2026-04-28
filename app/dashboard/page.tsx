@@ -14,20 +14,16 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import {
-  SplitSquareHorizontal,
   TrendingDown,
   Thermometer,
   MapPin,
   ArrowRight,
-  Zap,
-  IndianRupee,
-  Car,
-  Activity
 } from "lucide-react"
 import { useState } from "react"
 import dynamic from "next/dynamic"
 import { updateUHIForSimulation } from "@/components/visualization-3d"
 import AgentChat from "@/components/agentchat"
+import GlobalFeatureImportance from "@/components/global-feature-imp"
 
 interface SimulationData {
   wardId: number
@@ -70,10 +66,10 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-        if (!loading && !user) router.push("/")
-      }, [user, loading])
+    if (!loading && !user) router.push("/")
+  }, [user, loading])
 
-      if (loading || !user) return null
+  if (loading || !user) return null
 
   const calculateSecondaryMetrics = (data: SimulationData) => {
     const energySavingsPercent = (data.temperatureReduction * 7.5).toFixed(1)
@@ -214,7 +210,7 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-background">
       <DashboardNav />
-       {/* Signout bar */}
+      {/* Signout bar */}
       <div className="border-b border-border/40 bg-background/80 backdrop-blur-sm px-6 py-2 flex justify-end items-center gap-3">
         <span className="text-sm text-muted-foreground">{user.email}</span>
         <Button
@@ -310,6 +306,11 @@ export default function DashboardPage() {
           {/* Input Map & Engine */}
           <div className="lg:col-span-1 min-h-[500px] flex flex-col">
             <Visualization3D onWardSelect={handleWardSelection} />
+          </div>
+
+          {/* XAI Global Importance */}
+          <div className="lg:col-span-2">
+            <GlobalFeatureImportance />
           </div>
 
           <div className="lg:col-span-1 min-h-[500px] flex flex-col">
