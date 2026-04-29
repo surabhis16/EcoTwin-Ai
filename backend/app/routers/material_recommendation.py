@@ -10,6 +10,7 @@ import numpy as np
 import joblib
 from sklearn.preprocessing import MinMaxScaler
 import traceback 
+from app.services.equity_audit import build_ward_equity_metrics
 
 load_dotenv()
 
@@ -50,6 +51,7 @@ class MaterialResponse(BaseModel):
     cooling_index: float
     voc_rating: float
     predicted_impact: Dict[str, float]
+    equity_notes: Optional[List[str]] = None
 
 
 # maps db schema columns to the exact feature names used training
@@ -119,6 +121,56 @@ def get_heat_multiplier_from_lst(ward_name: str) -> float:
         else: return 1.75
     except: return 1.25
 
+
+def get_ward_equity_context(ward_name: str) -> Optional[Dict]:
+    try:
+        with engine.connect() as conn:
+            rows = conn.execute(text("""
+                SELECT
+                    ward_number,
+                    ward_name_en,
+                    population,
+                    baseline_lst,
+                    baseline_ndvi,
+                    aqi,
+                    male_population,
+                    female_population,
+                    sc_population,
+                    st_population,
+                    assembly_constituency
+                FROM bengaluru_wards
+                WHERE baseline_lst IS NOT NULL
+                  AND baseline_ndvi IS NOT NULL
+            """)).fetchall()
+        metrics = build_ward_equity_metrics(rows)
+        return next(
+            (row for row in metrics if row["ward_name"].lower() == ward_name.lower()),
+            None,
+        )
+    except Exception as e:
+        print(f"Error fetching equity context: {e}")
+        return None
+
+
+def build_material_equity_notes(row, ward_equity: Optional[Dict], median_price: float, median_cooling: float) -> List[str]:
+    notes = []
+    price = float(row.get("price_inr_per_m3", 0) or 0)
+    cooling = float(row.get("cooling_index", 0) or 0)
+    embodied_carbon = float(row.get("embodied_carbon", 0) or 0)
+
+    if ward_equity and ward_equity.get("equity_rank", 999) <= 25:
+        notes.append("High-equity-priority ward: validate affordability before procurement")
+
+    if median_price and price > median_price * 1.25:
+        notes.append("Cost is above the city material median; check for affordability skew")
+    elif median_price and price <= median_price and cooling >= median_cooling:
+        notes.append("Equity-aligned option: median-or-lower cost with strong cooling")
+
+    if embodied_carbon > 0 and cooling < median_cooling:
+        notes.append("Cooling benefit is below median; avoid over-weighting sustainability claims alone")
+
+    return notes
+
 # main recc endpoint
 @router.post("/recommend", response_model=List[MaterialResponse])
 async def recommend_materials(request: MaterialRequest):
@@ -140,6 +192,7 @@ async def recommend_materials(request: MaterialRequest):
         # get Ward Heat Zone (Target)
         target_zone = get_ward_heat_zone(request.ward_name)
         heat_multiplier = get_heat_multiplier_from_lst(request.ward_name)
+        ward_equity = get_ward_equity_context(request.ward_name)
         
         # ml prediction
         X_features = prepare_features_for_model(df)
@@ -217,6 +270,8 @@ async def recommend_materials(request: MaterialRequest):
              return []
 
         top_materials = suitable_df.sort_values(by="final_score", ascending=False).head(request.top_n)
+        median_price = float(df["price_inr_per_m3"].median()) if "price_inr_per_m3" in df.columns else 0.0
+        median_cooling = float(df["cooling_index"].median()) if "cooling_index" in df.columns else 0.0
         
         results = []
         for _, row in top_materials.iterrows():
@@ -236,7 +291,8 @@ async def recommend_materials(request: MaterialRequest):
                     "tempChange": -round(temp_reduction, 2),
                     "co2Reduction": round((1 - row.get("transport_adjusted_carbon", 1)) * 100, 2),
                     "sustainabilityScore": round(row.get("final_score", 0) * 10, 1)
-                }
+                },
+                equity_notes=build_material_equity_notes(row, ward_equity, median_price, median_cooling)
             ))
             
         return results
