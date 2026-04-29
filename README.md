@@ -204,3 +204,8 @@ adk web --port 8001
 **Event bus for map sync** - frontend uses a lightweight pub/sub event bus (`mapEventBus.ts`) to decouple the agent chat component from the Cesium viewer. Agent responses are parsed for ward IDs and simulation keywords; matched data triggers camera flights and overlay rendering without prop drilling.
 
 **Materialized view for sentiment** - `ward_sentiment_summary` aggregates 30-day sentiment per ward as a materialized view, refreshed after each Reddit collection run, keeping the 3D map overlay performant.
+
+**Equity-adjusted auditing over raw heat ranking** - the platform keeps the original UHI model output intact, then layers an audit score on top using demographic vulnerability and exposure signals. This preserves model transparency while flagging wards whose equity-adjusted priority is materially higher than their heat-only rank.
+
+**Material fairness checks** - material recommendations are still ranked by cooling, cost, health, and sustainability preferences, but the equity layer adds notes when high-vulnerability wards receive above-median-cost options or when affordable high-cooling alternatives exist.
+
