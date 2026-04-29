@@ -131,6 +131,17 @@ export function SentimentAnalysis() {
       ? citywidePost.filter(p => p.stress_risk === "high")
       : citywidePost.filter(p => p.policy_category === activeFilter)
 
+  const displayedHotspots = filteredHotspots.slice(0, 9)
+  const displayedCitywide = filteredCitywide.slice(0, 9)
+  const hotspotGridItems = [
+    ...displayedHotspots,
+    ...Array.from({ length: 9 - displayedHotspots.length }, (_, idx) => ({ placeholder: true, id: `hotspot-placeholder-${idx}` }))
+  ]
+  const citywideGridItems = [
+    ...displayedCitywide,
+    ...Array.from({ length: 9 - displayedCitywide.length }, (_, idx) => ({ placeholder: true, id: `citywide-placeholder-${idx}` }))
+  ]
+
   if (loading) {
     return (
       <Card className="p-6 bg-card/50 backdrop-blur-sm">
@@ -142,8 +153,8 @@ export function SentimentAnalysis() {
   }
 
   return (
-    <Card className="p-6 bg-card/50 backdrop-blur-sm">
-      <div className="flex items-center justify-between mb-4">
+    <Card className="p-4 bg-card/50 backdrop-blur-sm min-w-0 max-w-full max-h-[680px] overflow-hidden">
+      <div className="flex items-center justify-between mb-4 min-w-0">
         <div>
           <h3 className="text-2xl font-bold mb-1 flex items-center gap-2">
             <MessageSquare className="h-6 w-6 text-accent" />
@@ -266,149 +277,179 @@ export function SentimentAnalysis() {
       {/* Ward-Specific Tab */}
       {activeTab === "ward" && (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-125 overflow-y-auto">
-            {filteredHotspots.length === 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2 min-w-0 max-w-full">
+            {displayedHotspots.length === 0 ? (
               <div className="col-span-full text-center py-12 text-muted-foreground">
                 <MessageSquare className="h-12 w-12 mx-auto mb-2 opacity-50" />
                 <p>No ward-specific sentiment data</p>
               </div>
             ) : (
-              filteredHotspots.map((spot, idx) => (
-                <div
-                  key={idx}
-                  className="p-3 rounded-lg border bg-muted/30 border-transparent hover:bg-muted/50 transition-all"
-                >
-                  <div className="flex items-start justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <MapPin className="h-4 w-4 text-primary shrink-0" />
-                      <span className="font-semibold text-sm line-clamp-1">{spot.location}</span>
+              hotspotGridItems.map((spot, idx) => {
+                if (spot.placeholder) {
+                  return (
+                    <div
+                      key={spot.id}
+                      className="rounded-lg border border-dashed border-border/40 bg-background/50 min-h-[120px]"
+                    />
+                  )
+                }
+
+                return (
+                  <div
+                    key={idx}
+                    className="p-2 rounded-lg border bg-muted/30 border-transparent hover:bg-muted/50 transition-all min-h-[110px] min-w-0 w-full flex flex-col justify-between break-words"
+                  >
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <MapPin className="h-4 w-4 text-primary shrink-0" />
+                        <span className="font-semibold text-sm line-clamp-1">{spot.location}</span>
+                      </div>
+                      <AlertTriangle className="h-4 w-4 text-red-500 shrink-0" />
                     </div>
-                    <AlertTriangle className="h-4 w-4 text-red-500 shrink-0" />
-                  </div>
 
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                      <div
-                        className={`h-full ${getSentimentBarColor(spot.sentiment_score)}`}
-                        style={{ width: `${getSentimentBarWidth(spot.sentiment_score)}%` }}
-                      />
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                        <div
+                          className={`h-full ${getSentimentBarColor(spot.sentiment_score)}`}
+                          style={{ width: `${getSentimentBarWidth(spot.sentiment_score)}%` }}
+                        />
+                      </div>
+                      <span className={`text-xs font-bold ${getSentimentTextColor(spot.sentiment_score)}`}>
+                        {(spot.sentiment_score * 100).toFixed(0)}
+                      </span>
                     </div>
-                    <span className={`text-xs font-bold ${getSentimentTextColor(spot.sentiment_score)}`}>
-                      {(spot.sentiment_score * 100).toFixed(0)}
-                    </span>
-                  </div>
 
-                  <p className="text-xs text-muted-foreground line-clamp-2 mb-2">
-                    {spot.example_feedback}
-                  </p>
+                    <p className="text-xs text-muted-foreground line-clamp-2 mb-2">
+                      {spot.example_feedback}
+                    </p>
 
-                  <div className="flex items-center justify-between text-xs gap-2">
-                    <div className="flex items-center gap-2 text-muted-foreground flex-wrap">
-                      {spot.platform && (
+                    <div className="flex items-center justify-between text-xs gap-2">
+                      <div className="flex items-center gap-2 text-muted-foreground flex-wrap">
+                        {spot.platform && (
+                          <Badge variant="secondary" className="text-xs">
+                            {spot.platform}
+                          </Badge>
+                        )}
                         <Badge variant="secondary" className="text-xs">
-                          {spot.platform}
+                          {spot.policy_category}
                         </Badge>
-                      )}
-                      <Badge variant="secondary" className="text-xs">
-                        {spot.policy_category}
-                      </Badge>
-                      {spot.created_at && (
-                        <span className="flex items-center gap-1">
-                          <Calendar className="h-3 w-3" />
-                          {formatDate(spot.created_at)}
-                        </span>
+                        {spot.created_at && (
+                          <span className="flex items-center gap-1">
+                            <Calendar className="h-3 w-3" />
+                            {formatDate(spot.created_at)}
+                          </span>
+                        )}
+                      </div>
+                      {spot.source_url && (
+                        <a
+                          href={spot.source_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-primary hover:underline flex items-center gap-1 shrink-0"
+                        >
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
                       )}
                     </div>
-                    {spot.source_url && (
-                      <a
-                        href={spot.source_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-primary hover:underline flex items-center gap-1 shrink-0"
-                      >
-                        <ExternalLink className="h-3 w-3" />
-                      </a>
-                    )}
                   </div>
-                </div>
-              ))
+                )
+              })
             )}
           </div>
+          {filteredHotspots.length > 9 && (
+            <p className="mt-3 text-sm text-muted-foreground">Showing top 9 ward hotspots in a 3×3 grid.</p>
+          )}
         </>
       )}
 
       {/* City-Wide Tab */}
       {activeTab === "citywide" && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-125 overflow-y-auto">
-          {filteredCitywide.length === 0 ? (
-            <div className="col-span-full text-center py-12 text-muted-foreground">
-              <Globe className="h-12 w-12 mx-auto mb-2 opacity-50" />
-              <p>No city-wide posts yet</p>
-            </div>
-          ) : (
-            filteredCitywide.map((post, idx) => (
-              <div
-                key={idx}
-                className="p-3 rounded-lg border bg-muted/30 border-transparent"
-              >
-                <div className="flex items-start justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <Globe className="h-4 w-4 text-blue-500 shrink-0" />
-                    <span className="font-semibold text-sm line-clamp-1">{post.location}</span>
-                  </div>
-                  <Badge
-                    variant="outline"
-                    className={`text-xs shrink-0 ${post.sentiment === "positive"
-                      ? "border-emerald-500/50 text-emerald-500"
-                      : post.sentiment === "negative"
-                        ? "border-red-500/50 text-red-500"
-                        : "border-yellow-500/50 text-yellow-500"
-                      }`}
-                  >
-                    {post.sentiment}
-                  </Badge>
-                </div>
-
-                <div className="flex items-center gap-3 mb-2">
-                  <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                    <div
-                      className={`h-full ${getSentimentBarColor(post.sentiment_score)}`}
-                      style={{ width: `${getSentimentBarWidth(post.sentiment_score)}%` }}
-                    />
-                  </div>
-                  <span className={`text-xs font-bold ${getSentimentTextColor(post.sentiment_score)}`}>
-                    {(post.sentiment_score * 100).toFixed(0)}
-                  </span>
-                </div>
-
-                <p className="text-xs text-muted-foreground mb-2 line-clamp-2">
-                  {post.text_preview}...
-                </p>
-
-                <div className="flex items-center justify-between text-xs gap-2">
-                  <div className="flex items-center gap-2 text-muted-foreground flex-wrap">
-                    <Badge variant="secondary" className="text-xs">
-                      {post.platform}
-                    </Badge>
-                    <Badge variant="secondary" className="text-xs">
-                      {post.policy_category}
-                    </Badge>
-                  </div>
-                  {post.source_url && (
-                    <a
-                      href={post.source_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-primary hover:underline flex items-center gap-1 shrink-0"
-                    >
-                      <ExternalLink className="h-3 w-3" />
-                    </a>
-                  )}
-                </div>
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2 min-w-0 max-w-full">
+            {displayedCitywide.length === 0 ? (
+              <div className="col-span-full text-center py-12 text-muted-foreground">
+                <Globe className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                <p>No city-wide posts yet</p>
               </div>
-            ))
+            ) : (
+              citywideGridItems.map((post, idx) => {
+                if (post.placeholder) {
+                  return (
+                    <div
+                      key={post.id}
+                      className="rounded-lg border border-dashed border-border/40 bg-background/50 min-h-[120px]"
+                    />
+                  )
+                }
+
+                return (
+                  <div
+                    key={idx}
+                    className="p-2 rounded-lg border bg-muted/30 border-transparent min-h-[120px] min-w-0 w-full flex flex-col justify-between break-words"
+                  >
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <Globe className="h-4 w-4 text-blue-500 shrink-0" />
+                        <span className="font-semibold text-sm line-clamp-1">{post.location}</span>
+                      </div>
+                      <Badge
+                        variant="outline"
+                        className={`text-xs shrink-0 ${post.sentiment === "positive"
+                          ? "border-emerald-500/50 text-emerald-500"
+                          : post.sentiment === "negative"
+                            ? "border-red-500/50 text-red-500"
+                            : "border-yellow-500/50 text-yellow-500"
+                          }`}
+                      >
+                        {post.sentiment}
+                      </Badge>
+                    </div>
+
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                        <div
+                          className={`h-full ${getSentimentBarColor(post.sentiment_score)}`}
+                          style={{ width: `${getSentimentBarWidth(post.sentiment_score)}%` }}
+                        />
+                      </div>
+                      <span className={`text-xs font-bold ${getSentimentTextColor(post.sentiment_score)}`}>
+                        {(post.sentiment_score * 100).toFixed(0)}
+                      </span>
+                    </div>
+
+                    <p className="text-xs text-muted-foreground mb-2 line-clamp-2">
+                      {post.text_preview}...
+                    </p>
+
+                    <div className="flex items-center justify-between text-xs gap-2">
+                      <div className="flex items-center gap-2 text-muted-foreground flex-wrap">
+                        <Badge variant="secondary" className="text-xs">
+                          {post.platform}
+                        </Badge>
+                        <Badge variant="secondary" className="text-xs">
+                          {post.policy_category}
+                        </Badge>
+                      </div>
+                      {post.source_url && (
+                        <a
+                          href={post.source_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-primary hover:underline flex items-center gap-1 shrink-0"
+                        >
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                )
+              })
+            )}
+          </div>
+          {filteredCitywide.length > 9 && (
+            <p className="mt-3 text-sm text-muted-foreground">Showing top 9 city-wide posts in a 3×3 grid.</p>
           )}
-        </div>
+        </>
       )}
 
       {/* Footer */}

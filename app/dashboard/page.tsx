@@ -301,89 +301,72 @@ export default function DashboardPage() {
 
         </div>
 
-        <div className="grid gap-6 lg:grid-cols-2">
+        <div className="grid gap-3 lg:grid-cols-12">
 
-          {/* Input Map & Engine */}
-          <div className="lg:col-span-1 min-h-[500px] flex flex-col">
-            <Visualization3D onWardSelect={handleWardSelection} />
+          {/* Main map + full-width context */}
+          <div className="lg:col-span-7 grid gap-3">
+            <div className="min-h-[500px] flex flex-col">
+              <Visualization3D onWardSelect={handleWardSelection} />
+            </div>
+
+            <div>
+              <GlobalFeatureImportance />
+            </div>
           </div>
 
-          {/* XAI Global Importance */}
-          <div className="lg:col-span-2">
-            <GlobalFeatureImportance />
-          </div>
-
-          <div className="lg:col-span-1 min-h-[500px] flex flex-col">
+          {/* Right sidebar: engine */}
+          <div className="lg:col-span-5">
             <PolicySimulationEngine onSimulate={handleSimulate} />
           </div>
 
-          {/* Results Area */}
-          <div className="lg:col-span-2 grid grid-cols-1 lg:grid-cols-2 gap-6 animate-in fade-in slide-in-from-bottom duration-500">
-
-            {/* Impact Assessment */}
-            {simulationActive && simulationData && (
-              <Card className="lg:col-span-2 p-8 border-primary/20 bg-linear-to-br from-primary/5 to-emerald-500/5 shadow-lg">
+          {/* Impact Snapshot + Feasibility side by side */}
+          {simulationActive && simulationData && (
+            <div className="lg:col-span-6">
+              <Card className="p-6 border-primary/20 bg-linear-to-br from-primary/5 to-emerald-500/5 shadow-lg h-full">
                 <div className="mb-4">
                   <h3 className="text-xl font-bold flex items-center gap-2">
                     <Thermometer className="h-5 w-5 text-primary" />
-                    Impact Assessment Results
+                    Impact Snapshot
                   </h3>
                   <p className="text-sm text-muted-foreground">
-                    Predicted outcomes for {simulationData.wardName}
+                    Quick view of projected outcomes for {simulationData.wardName}
                   </p>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-                  <div className="bg-background/80 p-6 rounded-2xl border shadow-sm">
-                    <p className="text-xs font-bold text-muted-foreground mb-1 uppercase">Cooling Impact</p>
-                    <p className="text-4xl font-black text-emerald-500">
-                      -{simulationData.temperatureReduction.toFixed(2)}°C
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-2">
-                      Temperature reduction achieved
-                    </p>
+                <div className="grid grid-cols-1 gap-3">
+                  <div className="bg-background/80 p-4 rounded-2xl border shadow-sm">
+                    <p className="text-xs font-bold text-muted-foreground uppercase">Cooling Impact</p>
+                    <p className="text-3xl font-black text-emerald-500">-{simulationData.temperatureReduction.toFixed(2)}°C</p>
                   </div>
-
-                  <div className="bg-background/80 p-6 rounded-2xl border shadow-sm">
-                    <p className="text-xs font-bold text-muted-foreground mb-1 uppercase">Projected Temp</p>
-                    <p className="text-4xl font-black">
-                      {simulationData.lstAfter.toFixed(2)}°C
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-2">
-                      From {simulationData.lstBefore.toFixed(2)}°C baseline
-                    </p>
+                  <div className="bg-background/80 p-4 rounded-2xl border shadow-sm">
+                    <p className="text-xs font-bold text-muted-foreground uppercase">Projected Temp</p>
+                    <p className="text-3xl font-black">{simulationData.lstAfter.toFixed(2)}°C</p>
                   </div>
-
-                  <div className="bg-background/80 p-6 rounded-2xl border shadow-sm">
-                    <p className="text-xs font-bold text-muted-foreground mb-1 uppercase">Carbon Offset</p>
-                    <p className="text-4xl font-black text-blue-500">
-                      {simulationData.co2Offset.toLocaleString()} <span className="text-sm">t/y</span>
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-2">
-                      Annual CO₂ sequestration
-                    </p>
+                  <div className="bg-background/80 p-4 rounded-2xl border shadow-sm">
+                    <p className="text-xs font-bold text-muted-foreground uppercase">CO₂ Offset</p>
+                    <p className="text-3xl font-black text-blue-500">{simulationData.co2Offset.toLocaleString()} t/y</p>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-3 mt-4">
                   <div className="bg-background/80 p-4 rounded-xl border flex justify-between items-center">
-                    <p className="text-sm font-bold text-muted-foreground">RISK STATUS</p>
+                    <p className="text-sm font-bold text-muted-foreground">Risk Status</p>
                     <p className="text-sm font-bold text-primary">
                       {simulationData.risk_before} → {simulationData.risk_after}
                     </p>
                   </div>
                   <div className="bg-background/80 p-4 rounded-xl border flex justify-between items-center">
-                    <p className="text-sm font-bold text-muted-foreground">NDVI SHIFT</p>
+                    <p className="text-sm font-bold text-muted-foreground">NDVI Shift</p>
                     <p className="text-sm font-bold text-emerald-500">
                       {simulationData.ndviBefore.toFixed(3)} → {simulationData.ndviAfter.toFixed(3)}
                     </p>
                   </div>
                 </div>
 
-                <div className="mt-6 flex gap-3">
+                <div className="mt-4 flex flex-col gap-3">
                   <Button
                     variant="outline"
-                    className="flex-1"
+                    className="w-full"
                     onClick={() => {
                       setSimulationActive(false);
                       setSimulationData(null);
@@ -394,7 +377,7 @@ export default function DashboardPage() {
                     Clear Simulation
                   </Button>
                   <Button
-                    className="flex-1 bg-primary text-primary-foreground"
+                    className="w-full bg-primary text-primary-foreground"
                     onClick={async () => {
                       if (!simulationData) return;
 
@@ -423,40 +406,41 @@ export default function DashboardPage() {
                     <ArrowRight className="h-4 w-4 mr-2" />
                     Export Results
                   </Button>
-
                 </div>
               </Card>
-            )}
-
-            {/* Interactive Map */}
-            <div className={`${simulationActive ? 'lg:col-span-1' : 'lg:col-span-2'} h-full min-h-[450px] transition-all duration-500`}>
-              <InteractiveMap
-                viewMode={viewMode}
-                simulationActive={simulationActive}
-                simulationData={simulationData}
-                comparisonMode={comparisonMode}
-              />
             </div>
+          )}
 
-            {/* Feasibility Strategies */}
-            {simulationActive && secondaryMetrics && (
+          {simulationActive && secondaryMetrics && (
+            <div className="lg:col-span-6">
               <FeasibilityAnalysis metrics={secondaryMetrics} />
-            )}
+            </div>
+          )}
 
+          {/* Urban Heat Island map spans full width below cards */}
+          <div className="lg:col-span-12 h-full min-h-[450px] transition-all duration-500">
+            <InteractiveMap
+              viewMode={viewMode}
+              simulationActive={simulationActive}
+              simulationData={simulationData}
+              comparisonMode={comparisonMode}
+            />
           </div>
+        </div>
 
-          <div className="lg:col-span-2">
+        <div className="grid gap-6">
+          <div>
             <MaterialRecommender
               selectedZone={selectedWardData?.ward_name || selectedZone}
               onMaterialApplied={handleMaterialApplied}
             />
           </div>
 
-          <div className="lg:col-span-2">
+          <div>
             <AgentChat />
           </div>
 
-          <div className="lg:col-span-2">
+          <div>
             <SentimentAnalysis />
           </div>
         </div>

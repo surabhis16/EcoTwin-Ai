@@ -97,7 +97,6 @@ export function InteractiveMap({ viewMode, simulationActive, simulationData, com
 
   useEffect(() => {
     if (initializedRef.current || Object.keys(wardsData).length === 0) return
-    initializedRef.current = true
 
     const initCesium = async () => {
       try {
@@ -129,6 +128,7 @@ export function InteractiveMap({ viewMode, simulationActive, simulationData, com
         })
 
         viewerRef.current = viewer
+        initializedRef.current = true
 
         viewer.camera.setView({
           destination: Cesium.Cartesian3.fromDegrees(77.5946, 12.9716, 60000),
@@ -155,23 +155,55 @@ export function InteractiveMap({ viewMode, simulationActive, simulationData, com
       if (viewerRef.current && !viewerRef.current.isDestroyed()) {
         viewerRef.current.destroy()
       }
+      viewerRef.current = null
+      initializedRef.current = false
     }
   }, [wardsData, wardsMetadata])
 
   // Re-render when layer or simulation changes
   useEffect(() => {
-    if (viewerRef.current && Object.keys(wardsData).length > 0) {
-      renderWards(viewerRef.current, null)
-    }
-  }, [activeLayer, viewMode, simulationActive, simulationData])
+    const viewer = viewerRef.current
+    if (!viewer || (viewer.isDestroyed && viewer.isDestroyed())) return
+    if (Object.keys(wardsData).length === 0) return
+
+    renderWards(viewer, null)
+  }, [activeLayer, viewMode, simulationActive, simulationData, wardsData])
 
   const renderWards = async (viewer: any, Cesium: any) => {
+    if (!viewer) {
+      console.warn('renderWards called without a viewer instance')
+      return
+    }
+
+    let entitiesCollection: any
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      try {
+        entitiesCollection = viewer.entities
+        break
+      } catch (err) {
+        if (attempt === 4) {
+          console.warn('Cesium viewer entities not available after retries, skipping renderWards', err)
+          return
+        }
+        await new Promise((resolve) => setTimeout(resolve, 100))
+      }
+    }
+
+    if (!entitiesCollection || typeof entitiesCollection.remove !== 'function') {
+      console.warn('Cesium viewer entities collection is invalid, skipping renderWards', entitiesCollection)
+      return
+    }
+
     if (!Cesium) {
       Cesium = await import("cesium")
     }
 
     wardEntitiesRef.current.forEach(entity => {
-      viewer.entities.remove(entity)
+      try {
+        entitiesCollection.remove(entity)
+      } catch (err) {
+        console.warn('Failed to remove existing ward entity:', err)
+      }
     })
     wardEntitiesRef.current = []
 

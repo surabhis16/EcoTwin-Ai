@@ -36,7 +36,9 @@ export function FeasibilityAnalysis({ metrics }: FeasibilityProps) {
           <p className="text-3xl font-black text-foreground">
             {metrics.energySavingsPercent}%
           </p>
-          <p className="text-xs text-muted-foreground">Est. AC energy load reduction</p>
+          <p className="text-xs text-muted-foreground">
+            Estimated reduction in cooling energy demand from lower urban temperatures.
+          </p>
         </div>
 
         {/* Cost Estimate */}
@@ -45,12 +47,14 @@ export function FeasibilityAnalysis({ metrics }: FeasibilityProps) {
             <div className="h-8 w-8 rounded-full bg-green-500/10 flex items-center justify-center">
               <IndianRupee className="h-4 w-4 text-green-500" />
             </div>
-            <span className="text-sm font-semibold text-muted-foreground">Implementation</span>
+            <span className="text-sm font-semibold text-muted-foreground">Implementation Cost</span>
           </div>
           <p className="text-3xl font-black text-foreground">
             ₹{metrics.estimatedCostCr} Cr
           </p>
-          <p className="text-xs text-muted-foreground">Est. capital expenditure</p>
+          <p className="text-xs text-muted-foreground">
+            Estimated capital cost for recommended cooling and greening interventions.
+          </p>
         </div>
 
         {/* Social Impact */}
@@ -59,12 +63,14 @@ export function FeasibilityAnalysis({ metrics }: FeasibilityProps) {
             <div className="h-8 w-8 rounded-full bg-blue-500/10 flex items-center justify-center">
               <Car className="h-4 w-4 text-blue-500" />
             </div>
-            <span className="text-sm font-semibold text-muted-foreground">Pollution Control</span>
+            <span className="text-sm font-semibold text-muted-foreground">Emission Benefit</span>
           </div>
           <p className="text-3xl font-black text-foreground">
             -{metrics.carEquivalent}
           </p>
-          <p className="text-xs text-muted-foreground">Equivalent cars removed (emissions)</p>
+          <p className="text-xs text-muted-foreground">
+            Equivalent reduction in annual vehicle emissions from the intervention.
+          </p>
         </div>
       </div>
     </Card>

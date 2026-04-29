@@ -150,19 +150,19 @@ export default function MaterialRecommender({ selectedZone, onMaterialApplied }:
   }
 
   return (
-    <Card className="p-6 bg-card/50 backdrop-blur-sm">
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h3 className="text-2xl font-bold mb-1">Material Recommender</h3>
-          <p className="text-sm text-muted-foreground">
+    <Card className="p-4 bg-card/50 backdrop-blur-sm min-w-0 max-w-full overflow-hidden">
+      <div className="flex flex-col gap-4 md:flex-row items-start md:items-center justify-between mb-4 min-w-0">
+        <div className="min-w-0">
+          <h3 className="text-xl font-bold mb-1">Material Recommender</h3>
+          <p className="text-sm text-muted-foreground truncate">
             {selectedZone ? `Analyzing: ${selectedZone}` : "Select a zone to get recommendations"}
           </p>
         </div>
-        <Layers className="h-6 w-6 text-primary" />
+        <Layers className="h-6 w-6 text-primary shrink-0" />
       </div>
 
       {selectedZone && (
-        <div className="mb-4 flex gap-2">
+        <div className="mb-4 flex flex-wrap gap-2">
           {availableApplications.length > 0 ? availableApplications.map((app) => (
             <Button
               key={app}
@@ -210,7 +210,7 @@ export default function MaterialRecommender({ selectedZone, onMaterialApplied }:
             {selectedZone || "selected zone"}
           </p>
 
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
             <div className="p-2 rounded bg-background/50">
               <div className="flex items-center gap-1 mb-1">
                 <TrendingDown className="h-3 w-3 text-blue-500" />
@@ -261,9 +261,9 @@ export default function MaterialRecommender({ selectedZone, onMaterialApplied }:
           {materials.map((material, index) => (
             <div
               key={index}
-              className="p-4 rounded-lg bg-muted/30 border border-border/50 hover:border-primary/50 transition-all"
+              className="p-3 rounded-lg bg-muted/30 border border-border/50 hover:border-primary/50 transition-all min-w-0"
             >
-              <div className="flex items-start justify-between mb-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start justify-between mb-3 min-w-0">
                 <div>
                   <h4 className="font-semibold text-lg mb-1">{material.material_name}</h4>
                   <p className="text-xs text-muted-foreground">{material.usage_type}</p>
@@ -275,7 +275,7 @@ export default function MaterialRecommender({ selectedZone, onMaterialApplied }:
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-2 mb-3 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-3 text-xs">
                 <div className="p-2 rounded bg-background/50">
                   <p className="text-muted-foreground mb-1">Cooling</p>
                   <p className="font-bold">{formatCooling(material.cooling_index)}</p>
@@ -290,12 +290,12 @@ export default function MaterialRecommender({ selectedZone, onMaterialApplied }:
                 </div>
               </div>
 
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4 text-sm">
-                  <span className="text-muted-foreground">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center justify-between text-sm min-w-0">
+                <div className="flex flex-col gap-2 text-sm text-muted-foreground min-w-0">
+                  <span className="text-muted-foreground block sm:inline">
                     Score: <span className="text-foreground font-semibold">{(material.final_score * 100).toFixed(0)}/100</span>
                   </span>
-                  <span className="text-muted-foreground">
+                  <span className="text-muted-foreground block sm:inline">
                     Cost: <span className="text-foreground font-semibold">
                       {material.price_inr_per_m3 > 0
                         ? `₹${(material.price_inr_per_m3).toLocaleString()}/m³`
@@ -306,6 +306,7 @@ export default function MaterialRecommender({ selectedZone, onMaterialApplied }:
                 <Button
                   size="sm"
                   variant="default"
+                  className="whitespace-nowrap"
                   onClick={() => handleApplyMaterial(material)}
                 >
                   <MapPin className="h-4 w-4 mr-2" />
