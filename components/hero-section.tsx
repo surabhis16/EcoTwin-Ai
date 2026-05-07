@@ -11,7 +11,7 @@ import { useRouter } from "next/navigation"
 export function HeroSection() {
   const [mounted, setMounted] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
-  const { user} = useAuth()
+  const { user } = useAuth()
   const router = useRouter()
   const [showLogin, setShowLogin] = useState(false)
 
@@ -103,7 +103,7 @@ export function HeroSection() {
             size="lg"
             className="group text-lg px-8 py-7 rounded-full transition-all hover:scale-105"
             onClick={() => user ? router.push("/dashboard") : setShowLogin(true)}
->
+          >
             {user ? "Go to Dashboard" : "Explore Platform"}
             <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />
           </Button>
