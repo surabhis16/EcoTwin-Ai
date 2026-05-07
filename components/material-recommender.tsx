@@ -18,6 +18,7 @@ interface Material {
   voc_rating: number
   embodied_carbon: number
   predicted_impact: MaterialImpact
+  equity_notes?: string[]
 }
 
 interface MaterialRecommenderProps {
@@ -289,6 +290,12 @@ export default function MaterialRecommender({ selectedZone, onMaterialApplied }:
                   <p className="font-bold">{formatCarbon(material.embodied_carbon)}</p>
                 </div>
               </div>
+
+              {material.equity_notes && material.equity_notes.length > 0 && (
+                <div className="mb-3 rounded-md border border-blue-500/20 bg-blue-500/10 p-2 text-xs text-blue-700 dark:text-blue-300">
+                  {material.equity_notes[0]}
+                </div>
+              )}
 
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center justify-between text-sm min-w-0">
                 <div className="flex flex-col gap-2 text-sm text-muted-foreground min-w-0">

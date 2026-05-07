@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
+from app.services.equity_audit import build_ward_equity_metrics
 
 load_dotenv()
 
@@ -34,6 +35,32 @@ def risk_level(lst: float) -> str:
     elif lst < 45: 
         return "High"
     return "Extreme"
+
+
+WARD_EQUITY_COLUMNS = """
+    ward_number,
+    ward_name_en,
+    population,
+    baseline_lst,
+    baseline_ndvi,
+    aqi,
+    male_population,
+    female_population,
+    sc_population,
+    st_population,
+    assembly_constituency
+"""
+
+
+def get_equity_audit_for_ward(conn, ward_id: int):
+    rows = conn.execute(text(f"""
+        SELECT {WARD_EQUITY_COLUMNS}
+        FROM bengaluru_wards
+        WHERE baseline_lst IS NOT NULL
+          AND baseline_ndvi IS NOT NULL
+    """)).fetchall()
+    metrics = build_ward_equity_metrics(rows)
+    return next((row for row in metrics if row["ward_id"] == ward_id), None)
 
 # ward metadata endpoints
 # Populates the dropdown menu automatically from the db and returns list of all wards with their IDs and names
@@ -86,6 +113,7 @@ def get_ward_baseline(ward_id: int):
             WHERE ward_number = :w_num
         """)
         ward = conn.execute(query, {"w_num": ward_id}).fetchone()
+        equity_audit = get_equity_audit_for_ward(conn, ward_id)
 
     if not ward:
         raise HTTPException(status_code=404, detail="Ward not found")
@@ -104,7 +132,8 @@ def get_ward_baseline(ward_id: int):
         "coordinates": {
             "lon": round(ward.lon, 6),
             "lat": round(ward.lat, 6)
-        }
+        },
+        "equity_audit": equity_audit
     }
 
 # simulation 
@@ -130,6 +159,7 @@ def simulate_ward(payload: SimulationInput):
             WHERE ward_number = :w_num
         """)
         ward = conn.execute(query, {"w_num": payload.ward_id}).fetchone()
+        equity_audit = get_equity_audit_for_ward(conn, payload.ward_id)
 
     if not ward: 
         raise HTTPException(404, "Ward ID not found in database")
@@ -206,6 +236,7 @@ def simulate_ward(payload: SimulationInput):
             "lon": round(ward.lon, 6),
             "lat": round(ward.lat, 6)
         },
+        "equity_audit": equity_audit,
         
         # Model Delta (for debugging)
         "model_delta": round(delta, 2)
@@ -226,6 +257,16 @@ def get_hotspots(threshold: float = 40.0, limit: int = 10):
             LIMIT :limit
         """)
         rows = conn.execute(query, {"threshold": threshold, "limit": limit}).fetchall()
+        equity_rows = conn.execute(text(f"""
+            SELECT {WARD_EQUITY_COLUMNS}
+            FROM bengaluru_wards
+            WHERE baseline_lst IS NOT NULL
+              AND baseline_ndvi IS NOT NULL
+        """)).fetchall()
+        equity_by_ward = {
+            row["ward_id"]: row
+            for row in build_ward_equity_metrics(equity_rows)
+        }
         
         hotspots = [
             {
@@ -234,6 +275,9 @@ def get_hotspots(threshold: float = 40.0, limit: int = 10):
                 "lst_before": round(row.baseline_lst, 2),
                 "ndvi": round(row.baseline_ndvi, 3),
                 "risk_level": risk_level(row.baseline_lst),
+                "equity_priority_score": equity_by_ward.get(row.ward_number, {}).get("equity_priority_score"),
+                "equity_rank": equity_by_ward.get(row.ward_number, {}).get("equity_rank"),
+                "equity_flags": equity_by_ward.get(row.ward_number, {}).get("flags", []),
                 "lon": round(row.lon, 6),
                 "lat": round(row.lat, 6)
             }

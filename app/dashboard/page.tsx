@@ -13,6 +13,7 @@ import { FeasibilityAnalysis } from "@/components/feasibility-analysis"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   TrendingDown,
   Thermometer,
@@ -24,6 +25,7 @@ import dynamic from "next/dynamic"
 import { updateUHIForSimulation } from "@/components/visualization-3d"
 import AgentChat from "@/components/agentchat"
 import GlobalFeatureImportance from "@/components/global-feature-imp"
+import EquityAuditPanel from "@/components/equity-audit-panel"
 
 interface SimulationData {
   wardId: number
@@ -428,22 +430,33 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <div className="grid gap-6">
-          <div>
+        <Tabs defaultValue="materials" className="mt-6">
+          <TabsList className="mb-4 grid h-auto w-full grid-cols-2 md:w-fit md:grid-cols-4">
+            <TabsTrigger value="materials">Materials</TabsTrigger>
+            <TabsTrigger value="equity">Equity Audit</TabsTrigger>
+            <TabsTrigger value="agent">Agent</TabsTrigger>
+            <TabsTrigger value="sentiment">Sentiment</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="materials">
             <MaterialRecommender
               selectedZone={selectedWardData?.ward_name || selectedZone}
               onMaterialApplied={handleMaterialApplied}
             />
-          </div>
+          </TabsContent>
 
-          <div>
+          <TabsContent value="equity">
+            <EquityAuditPanel />
+          </TabsContent>
+
+          <TabsContent value="agent">
             <AgentChat />
-          </div>
+          </TabsContent>
 
-          <div>
+          <TabsContent value="sentiment">
             <SentimentAnalysis />
-          </div>
-        </div>
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   )

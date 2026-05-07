@@ -39,6 +39,7 @@ export function InteractiveMap({ viewMode, simulationActive, simulationData, com
   const containerRef = useRef<HTMLDivElement>(null)
   const mapContainerRef = useRef<HTMLDivElement>(null)
   const viewerRef = useRef<any>(null)
+  const cesiumRef = useRef<any>(null)
   const wardEntitiesRef = useRef<any[]>([])
   const initializedRef = useRef(false)
 
@@ -105,6 +106,7 @@ export function InteractiveMap({ viewMode, simulationActive, simulationData, com
         }
 
         const Cesium = await import("cesium")
+        cesiumRef.current = Cesium
 
         const token = process.env.NEXT_PUBLIC_CESIUM_ION_TOKEN
         if (token) {
@@ -141,7 +143,7 @@ export function InteractiveMap({ viewMode, simulationActive, simulationData, com
           })
         }, 300)
 
-        await renderWards(viewer, Cesium)
+        await renderWards(viewer, Cesium, activeLayer)
 
       } catch (err) {
         console.error('Cesium init error:', err)
@@ -156,6 +158,7 @@ export function InteractiveMap({ viewMode, simulationActive, simulationData, com
         viewerRef.current.destroy()
       }
       viewerRef.current = null
+      cesiumRef.current = null
       initializedRef.current = false
     }
   }, [wardsData, wardsMetadata])
@@ -166,10 +169,14 @@ export function InteractiveMap({ viewMode, simulationActive, simulationData, com
     if (!viewer || (viewer.isDestroyed && viewer.isDestroyed())) return
     if (Object.keys(wardsData).length === 0) return
 
-    renderWards(viewer, null)
+    renderWards(viewer, cesiumRef.current, activeLayer)
   }, [activeLayer, viewMode, simulationActive, simulationData, wardsData])
 
-  const renderWards = async (viewer: any, Cesium: any) => {
+  const renderWards = async (
+    viewer: any,
+    Cesium: any,
+    layer: "heat" | "green" | "pollution"
+  ) => {
     if (!viewer) {
       console.warn('renderWards called without a viewer instance')
       return
@@ -196,6 +203,7 @@ export function InteractiveMap({ viewMode, simulationActive, simulationData, com
 
     if (!Cesium) {
       Cesium = await import("cesium")
+      cesiumRef.current = Cesium
     }
 
     wardEntitiesRef.current.forEach(entity => {
@@ -210,7 +218,7 @@ export function InteractiveMap({ viewMode, simulationActive, simulationData, com
     const getColor = (wardNum: number, data: WardBaseline) => {
       const isSimulated = simulationActive && simulationData && simulationData.wardId === wardNum
 
-      if (activeLayer === "pollution") {
+      if (layer === "pollution") {
         const aqi = data.aqi !== undefined ? Number(data.aqi) : null
         if (aqi !== null && !isNaN(aqi)) {
           return getAQIColor(aqi, Cesium)
@@ -219,7 +227,7 @@ export function InteractiveMap({ viewMode, simulationActive, simulationData, com
         return Cesium.Color.fromCssColorString('#94a3b8')
       }
 
-      if (activeLayer === "heat") {
+      if (layer === "heat") {
         let temp = data.lst
         if (viewMode === "simulated" && isSimulated) {
           temp = simulationData.lstAfter
@@ -230,7 +238,7 @@ export function InteractiveMap({ viewMode, simulationActive, simulationData, com
         return Cesium.Color.fromCssColorString('#059669')
       }
 
-      if (activeLayer === "green") {
+      if (layer === "green") {
         let ndvi = data.ndvi
         if (viewMode === "simulated" && isSimulated) {
           ndvi = simulationData.ndviAfter
@@ -252,8 +260,8 @@ export function InteractiveMap({ viewMode, simulationActive, simulationData, com
     Object.entries(wardsData).forEach(([wardNumStr, data]) => {
       const wardNum = parseInt(wardNumStr)
 
-      if (activeLayer === "pollution" && (data.aqi === undefined || data.aqi === null)) {
-        return // skip wards without AQI data when showing pollution layer
+      if (layer === "pollution" && (data.aqi === undefined || data.aqi === null || Number.isNaN(Number(data.aqi)))) {
+        return
       }
 
       const wardName = getWardName(wardNum)
@@ -304,7 +312,7 @@ export function InteractiveMap({ viewMode, simulationActive, simulationData, com
                 <td style="padding: 6px 0; font-weight: 600; text-align: right;">#${wardNum}</td>
               </tr>
               
-              ${activeLayer === "pollution" && data.aqi != null ? `
+              ${layer === "pollution" && data.aqi != null ? `
                 <tr style="border-bottom: 1px solid #e5e7eb;">
                   <td style="padding: 6px 0; color: #666;">AQI:</td>
                   <td style="padding: 6px 0; font-weight: 600; text-align: right;">
@@ -318,7 +326,7 @@ export function InteractiveMap({ viewMode, simulationActive, simulationData, com
                 </tr>
               ` : ''}
               
-              ${activeLayer === "heat" ? `
+              ${layer === "heat" ? `
                 <tr style="border-bottom: 1px solid #e5e7eb;">
                   <td style="padding: 6px 0; color: #666;">Temperature:</td>
                   <td style="padding: 6px 0; font-weight: 600; text-align: right;">${displayLST.toFixed(2)}°C</td>
@@ -344,7 +352,7 @@ export function InteractiveMap({ viewMode, simulationActive, simulationData, com
                 ` : ''}
               ` : ''}
               
-              ${activeLayer === "green" ? `
+              ${layer === "green" ? `
                 <tr style="border-bottom: 1px solid #e5e7eb;">
                   <td style="padding: 6px 0; color: #666;">NDVI:</td>
                   <td style="padding: 6px 0; font-weight: 600; text-align: right;">${displayNDVI.toFixed(3)}</td>
@@ -376,6 +384,8 @@ export function InteractiveMap({ viewMode, simulationActive, simulationData, com
 
       wardEntitiesRef.current.push(entity)
     })
+
+    viewer.scene?.requestRender?.()
   }
 
   const toggleFullscreen = async () => {
