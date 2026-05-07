@@ -52,6 +52,52 @@ async def get_city_statistics() -> dict:
         r = await client.get(f"{BASE_URL}/api/uhi/city-statistics")
         return r.json()
 
+async def get_ward_equity(ward_id: int) -> dict:
+    """
+    Get equity audit for a specific ward — includes demographic vulnerability,
+    SC/ST population share, gender balance, exposure score, equity priority rank,
+    rank gap vs heat-only rank, and any bias flags.
+    """
+    async with httpx.AsyncClient() as client:
+        r = await client.get(f"{BASE_URL}/api/equity/ward/{ward_id}")
+        return r.json()
+
+async def get_equity_hotspots() -> dict:
+    """
+    Get the top under-prioritized wards — wards with high demographic vulnerability
+    that rank significantly lower in heat-only prioritization than in equity-adjusted
+    prioritization. Use this to detect algorithmic bias in intervention planning.
+    """
+    async with httpx.AsyncClient() as client:
+        r = await client.get(f"{BASE_URL}/api/equity/audit")
+        data = r.json()
+        return {
+            "under_prioritized_wards": data.get("under_prioritized_wards", []),
+            "summary": data.get("summary", {}),
+            "material_fairness": data.get("material_fairness", {})
+        }
+
+async def get_xai_explanation(ward_id: int, intensity: float, albedo_increase: float = 0.0) -> dict:
+    """
+    Get SHAP-based XAI explanation for a UHI simulation.
+    Shows which features (NDVI, albedo, location) drove the predicted temperature change
+    and by how much. Use this after run_simulation to explain why a ward will cool
+    by a certain amount.
+    intensity: same value passed to run_simulation
+    albedo_increase: 0.0 for green interventions, 0.08-0.15 for materials/cooling
+    """
+    async with httpx.AsyncClient() as client:
+        r = await client.post(f"{BASE_URL}/api/xai/explain-simulation",
+            json={
+                "ward_id": ward_id,
+                "intensity": intensity,
+                "albedo_increase": albedo_increase
+            })
+        return r.json()
+
+ward_equity_tool = FunctionTool(func=get_ward_equity)
+equity_hotspots_tool = FunctionTool(func=get_equity_hotspots)
+xai_explanation_tool = FunctionTool(func=get_xai_explanation)
 ward_info_tool = FunctionTool(func=get_ward_info)
 simulation_tool = FunctionTool(func=run_simulation)
 hotspots_tool = FunctionTool(func=get_hotspots)

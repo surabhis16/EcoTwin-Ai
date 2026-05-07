@@ -1,8 +1,11 @@
 from google.adk.agents import Agent
+
 from .tools import (
     ward_info_tool, simulation_tool, hotspots_tool,
-    materials_tool, sentiment_tool, city_stats_tool
+    materials_tool, sentiment_tool, city_stats_tool,
+    ward_equity_tool, equity_hotspots_tool, xai_explanation_tool
 )
+
 from .prompts import SYSTEM_PROMPT
 
 urban_climate_agent = Agent(
@@ -16,5 +19,8 @@ urban_climate_agent = Agent(
         materials_tool,
         sentiment_tool,
         city_stats_tool,
+        ward_equity_tool,        
+        equity_hotspots_tool,      
+        xai_explanation_tool,      
     ]
 )
