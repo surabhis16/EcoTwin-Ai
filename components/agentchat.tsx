@@ -44,12 +44,21 @@ export default function AgentChat() {
             /cool(?:ing)?\s+(?:the\s+\w+\s+)?by\s+(\d+\.?\d*)°C/gi,  // "cool the ward by 1.82°C"
             /cooling\s+effect[:\s*]+(\d+\.?\d*)/gi,
             /(\d+\.?\d*)°C\s+reduction/gi,
+            /cooling effect:\s*(\d+\.?\d*)°C/gi,  // "Cooling effect: 0.07°C"
+            /cooling effect:\s*(\d+\.?\d*)°C/gi,
             /reduction\s+of\s+(\d+\.?\d*)°C/gi,
             /represents\s+a\s+(\d+\.?\d*)°C/gi,
+            /decreases\s+by\s+(\d+\.?\d*)°C/gi,
+            /(?:projected\s+)?decrease\s+in\s+(?:land\s+surface\s+temperature\s+)?(?:\(lst\)\s+)?by\s+(\d+\.?\d*)°C/gi,
+            /a\s+cooling\s+effect\s+of\s+(\d+\.?\d*)°C/gi,  // "a cooling effect of 0.16°C"
         ]
+        const fromToMatches = [...text.matchAll(/from\s+(\d+\.?\d*)°C\s+to\s+(\d+\.?\d*)°C/gi)]
+        if (fromToMatches.length > 0) {
+            return fromToMatches.map(m => parseFloat(m[1]) - parseFloat(m[2]))
+        }
         for (const pattern of patterns) {
             const matches = [...text.matchAll(pattern)]
-            if (matches.length >= 1) {  // also changed >= 2 to >= 1
+            if (matches.length >= 1) {
                 const values = matches.map(m => parseFloat(m[1]))
                 console.log(`Cooling pattern matched:`, values)
                 return values
@@ -60,9 +69,12 @@ export default function AgentChat() {
 
     const parseAgentResponseForMapEvents = async (text: string) => {
         console.log("Agent response text:", text)
-        const wardMatches = [...text.matchAll(/(\d+)-([A-Za-z][A-Za-z\s]*[A-Za-z])/g)]
-        const wardSlugs = [...new Set(wardMatches.map(m => m[0].trim()))]
-        const wardIds = wardSlugs.map(s => parseInt(s.split("-")[0]))
+        const wardMatches = [
+            ...text.matchAll(/(?:Ward\s+)?(\d+)-([A-Za-z][A-Za-z\s]*[A-Za-z])/g),  // "104-Varthuru"
+            ...text.matchAll(/Ward\s+(\d+)\s+\(([A-Za-z][A-Za-z\s]*[A-Za-z])\)/g),  // "Ward 31 (Bande Mutt)"
+        ]
+        const wardSlugs = [...new Set(wardMatches.map(m => `${m[1]}-${m[2].trim()}`))]
+        const wardIds = [...new Set(wardSlugs.map(s => parseInt(s.split("-")[0])))]
         console.log("Ward IDs found:", wardIds)
         console.log("Has simulation:", text.toLowerCase().includes("cooling effect") ||
             text.toLowerCase().includes("cool the ward by"))
@@ -74,7 +86,12 @@ export default function AgentChat() {
             text.toLowerCase().includes("lst after") ||
             text.toLowerCase().includes("reduction in surface temperature") ||
             text.toLowerCase().includes("cool the ward by") ||
-            text.toLowerCase().includes("reduction in predicted surface temperature")
+            text.toLowerCase().includes("reduction in predicted surface temperature") ||
+            text.toLowerCase().includes("lst decreases by") ||
+            text.toLowerCase().includes("projected decrease") ||
+            text.toLowerCase().includes("decrease in lst") ||
+            text.toLowerCase().includes("decreases by") ||
+            text.toLowerCase().includes("decrease in land surface temperature")
 
         if (wardIds.length === 0) return
 
@@ -133,6 +150,7 @@ export default function AgentChat() {
         setMessages(prev => [...prev, { role: "user", text: userMsg }])
         setLoading(true)
 
+        let responseText = ""
         try {
             const res = await fetch("http://localhost:8000/api/agent/chat", {
                 method: "POST",
@@ -140,12 +158,27 @@ export default function AgentChat() {
                 body: JSON.stringify({ session_id: sessionId.current, message: userMsg })
             })
             const data = await res.json()
-            setMessages(prev => [...prev, { role: "agent", text: data.response }])
-            parseAgentResponseForMapEvents(data.response)
+            console.log("Raw API response:", data)
+            responseText = data.response
+            setMessages(prev => [...prev, { role: "agent", text: responseText }])
         } catch {
             setMessages(prev => [...prev, { role: "agent", text: "Connection error. Is the backend running?" }])
         } finally {
             setLoading(false)
+        }
+
+        if (responseText) {
+            const isSimulation =
+                responseText.toLowerCase().includes("predicted to result in") ||
+                responseText.toLowerCase().includes("is predicted to cool") ||
+                responseText.toLowerCase().includes("reducing the lst") ||
+                responseText.toLowerCase().includes("lst decreases by") ||
+                responseText.toLowerCase().includes("decreases by") ||
+                responseText.toLowerCase().includes("cooling effect:")
+
+            if (isSimulation) {
+                parseAgentResponseForMapEvents(responseText)
+            }
         }
     }
 

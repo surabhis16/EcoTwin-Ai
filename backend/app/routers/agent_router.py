@@ -44,7 +44,20 @@ async def chat(payload: ChatMessage):
         session_id=payload.session_id,
         new_message=user_msg
     ):
-        if event.is_final_response() and event.content:
-            final_response = event.content.parts[0].text
+        try:
+            if hasattr(event, 'candidates') and event.candidates:
+                for candidate in event.candidates:
+                    if candidate.content and candidate.content.parts:
+                        for part in candidate.content.parts:
+                            if hasattr(part, 'text') and part.text:
+                                final_response = part.text
+        except Exception:
+            pass
+        try:
+            text = event.content.parts[0].text
+            if text:
+                final_response = text
+        except Exception:
+            pass
 
     return {"response": final_response, "session_id": payload.session_id}

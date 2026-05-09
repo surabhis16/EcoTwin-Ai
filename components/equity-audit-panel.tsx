@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react"
 import {
   AlertTriangle,
   BarChart3,
+  ChevronLeft,
+  ChevronRight,
   Landmark,
   Loader2,
   Scale,
@@ -12,6 +14,7 @@ import {
   Users,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
@@ -41,6 +44,7 @@ interface ConstituencySummary {
   high_or_extreme_heat_wards: number
 }
 
+// ward_metrics removed — no longer in /audit response
 interface EquityAudit {
   summary: {
     total_wards: number
@@ -49,7 +53,6 @@ interface EquityAudit {
     avg_female_share: number
     method: string
   }
-  ward_metrics: EquityWard[]
   priority_wards: EquityWard[]
   under_prioritized_wards: EquityWard[]
   constituency_summary: ConstituencySummary[]
@@ -81,9 +84,7 @@ function scoreWidth(value: number) {
   return `${Math.max(4, Math.min(100, value * 100))}%`
 }
 
-function genderGap(ward: EquityWard) {
-  return Math.abs(0.5 - ward.female_share) * 2
-}
+const PAGE_SIZE = 30
 
 export default function EquityAuditPanel() {
   const [audit, setAudit] = useState<EquityAudit | null>(null)
@@ -93,7 +94,12 @@ export default function EquityAuditPanel() {
   const [constituency, setConstituency] = useState("all")
   const [sortMode, setSortMode] = useState<SortMode>("equity")
   const [selectedWardId, setSelectedWardId] = useState<number | null>(null)
+  const [wardMetrics, setWardMetrics] = useState<EquityWard[]>([])
+  const [wardPage, setWardPage] = useState(1)
+  const [wardTotal, setWardTotal] = useState(0)
+  const [wardsLoading, setWardsLoading] = useState(false)
 
+  // initial load — summary only, no ward_metrics
   useEffect(() => {
     const fetchAudit = async () => {
       try {
@@ -103,14 +109,44 @@ export default function EquityAuditPanel() {
         setAudit(await response.json())
         setError(null)
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to fetch equity audit")
+        setError(err instanceof Error ? err.message : "Failed to fetch")
       } finally {
         setLoading(false)
       }
     }
-
     fetchAudit()
   }, [])
+
+  // reset to page 1 whenever filters or sort change
+  useEffect(() => {
+    setWardPage(1)
+  }, [constituency, sortMode, auditLens])
+
+  // ward list - fetches when lens/constituency/sort/page changes
+  useEffect(() => {
+    if (auditLens === "materials") return
+
+    const fetchWards = async () => {
+      setWardsLoading(true)
+      try {
+        const params = new URLSearchParams({
+          page: wardPage.toString(),
+          page_size: PAGE_SIZE.toString(),
+          sort_by: sortMode,
+          ...(constituency !== "all" && { constituency }),
+        })
+        const res = await fetch(`${API_BASE_URL}/api/equity/audit/wards?${params}`)
+        const data = await res.json()
+        setWardMetrics(data.wards)
+        setWardTotal(data.total)
+      } catch (err) {
+        console.error("Failed to fetch ward metrics:", err)
+      } finally {
+        setWardsLoading(false)
+      }
+    }
+    fetchWards()
+  }, [auditLens, constituency, sortMode, wardPage])
 
   const materialRiskTone = useMemo(() => {
     if (!audit) return "border-muted text-muted-foreground"
@@ -119,44 +155,21 @@ export default function EquityAuditPanel() {
     return "border-emerald-500/40 text-emerald-600"
   }, [audit])
 
+  // derive constituency list from wardMetrics (populated after first ward fetch)
   const constituencies = useMemo(() => {
-    if (!audit) return []
     return Array.from(
-      new Set(audit.ward_metrics.map((ward) => ward.assembly_constituency || "Unknown"))
+      new Set(wardMetrics.map((w) => w.assembly_constituency || "Unknown"))
     ).sort()
-  }, [audit])
+  }, [wardMetrics])
 
-  const filteredWards = useMemo(() => {
-    if (!audit) return []
-
-    let wards = audit.ward_metrics.filter((ward) => {
-      const matchesConstituency = constituency === "all" || (ward.assembly_constituency || "Unknown") === constituency
-      if (!matchesConstituency) return false
-
-      if (auditLens === "under-priority") return ward.rank_gap >= 10 || ward.flags.length > 0
-      if (auditLens === "demographics") {
-        return ward.marginalized_share >= audit.summary.avg_marginalized_share || genderGap(ward) >= 0.06
-      }
-      return true
-    })
-
-    wards = [...wards].sort((a, b) => {
-      if (sortMode === "rank-gap") return b.rank_gap - a.rank_gap
-      if (sortMode === "marginalized") return b.marginalized_share - a.marginalized_share
-      if (sortMode === "gender-gap") return genderGap(b) - genderGap(a)
-      if (sortMode === "heat") return a.heat_rank - b.heat_rank
-      return a.equity_rank - b.equity_rank
-    })
-
-    return wards
-  }, [audit, auditLens, constituency, sortMode])
-
+  // selectedWard uses wardMetrics
   const selectedWard = useMemo(() => {
-    if (!audit) return null
-    const defaultWard = filteredWards[0] || audit.priority_wards[0] || null
+    const defaultWard = wardMetrics[0] ?? audit?.priority_wards[0] ?? null
     if (!selectedWardId) return defaultWard
-    return audit.ward_metrics.find((ward) => ward.ward_id === selectedWardId) || defaultWard
-  }, [audit, filteredWards, selectedWardId])
+    return wardMetrics.find((w) => w.ward_id === selectedWardId) ?? defaultWard
+  }, [audit, wardMetrics, selectedWardId])
+
+  const totalPages = Math.ceil(wardTotal / PAGE_SIZE)
 
   return (
     <Card className="p-6 bg-card/50 backdrop-blur-sm border-primary/20">
@@ -277,7 +290,11 @@ export default function EquityAuditPanel() {
                 <h4 className="font-bold">
                   {auditLens === "materials" ? "Material Bias Signals" : "Ward Audit Explorer"}
                 </h4>
-                <span className="text-xs text-muted-foreground">{filteredWards.length} wards in view</span>
+                {auditLens !== "materials" && (
+                  <span className="text-xs text-muted-foreground">
+                    {wardTotal} wards total
+                  </span>
+                )}
               </div>
 
               {auditLens === "materials" ? (
@@ -290,7 +307,10 @@ export default function EquityAuditPanel() {
                       </span>
                     </div>
                     <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted">
-                      <div className="h-full rounded-full bg-emerald-500" style={{ width: scoreWidth(audit.material_fairness.equitable_option_share) }} />
+                      <div
+                        className="h-full rounded-full bg-emerald-500"
+                        style={{ width: scoreWidth(audit.material_fairness.equitable_option_share) }}
+                      />
                     </div>
                   </div>
                   <div className="rounded-md border bg-card/50 p-3">
@@ -301,47 +321,92 @@ export default function EquityAuditPanel() {
                       </span>
                     </div>
                     <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted">
-                      <div className="h-full rounded-full bg-yellow-500" style={{ width: scoreWidth(audit.material_fairness.expensive_cooling_option_share) }} />
+                      <div
+                        className="h-full rounded-full bg-yellow-500"
+                        style={{ width: scoreWidth(audit.material_fairness.expensive_cooling_option_share) }}
+                      />
                     </div>
                   </div>
                   <div className="rounded-md border bg-blue-500/10 p-3 text-sm text-blue-700 dark:text-blue-300">
-                    Median price baseline: Rs {audit.material_fairness.median_price_inr_per_m3.toLocaleString()}/m3. {audit.material_fairness.guidance}
+                    Median price baseline: Rs {audit.material_fairness.median_price_inr_per_m3.toLocaleString()}/m³.{" "}
+                    {audit.material_fairness.guidance}
                   </div>
                 </div>
               ) : (
-                <div className="max-h-[520px] space-y-2 overflow-y-auto pr-1">
-                  {filteredWards.slice(0, 30).map((ward) => (
-                    <button
-                      key={ward.ward_id}
-                      type="button"
-                      onClick={() => setSelectedWardId(ward.ward_id)}
-                      className={`w-full rounded-md border p-3 text-left transition-colors hover:border-primary/60 ${selectedWard?.ward_id === ward.ward_id ? "border-primary bg-primary/10" : "bg-card/50"}`}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-semibold">{ward.ward_name}</p>
-                          <p className="mt-1 truncate text-xs text-muted-foreground">
-                            {ward.assembly_constituency || "Unknown constituency"}
-                          </p>
-                        </div>
-                        <Badge variant="outline" className={riskTone(ward.risk_level)}>
-                          {ward.risk_level}
-                        </Badge>
-                      </div>
+                <>
+                  {wardsLoading ? (
+                    <div className="flex items-center justify-center py-16">
+                      <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                    </div>
+                  ) : (
+                    <div className="max-h-[480px] space-y-2 overflow-y-auto pr-1">
+                      {wardMetrics.map((ward) => (
+                        <button
+                          key={ward.ward_id}
+                          type="button"
+                          onClick={() => setSelectedWardId(ward.ward_id)}
+                          className={`w-full rounded-md border p-3 text-left transition-colors hover:border-primary/60 ${selectedWard?.ward_id === ward.ward_id
+                            ? "border-primary bg-primary/10"
+                            : "bg-card/50"
+                            }`}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold">{ward.ward_name}</p>
+                              <p className="mt-1 truncate text-xs text-muted-foreground">
+                                {ward.assembly_constituency || "Unknown constituency"}
+                              </p>
+                            </div>
+                            <Badge variant="outline" className={riskTone(ward.risk_level)}>
+                              {ward.risk_level}
+                            </Badge>
+                          </div>
 
-                      <div className="mt-3 grid gap-2 text-xs text-muted-foreground sm:grid-cols-4">
-                        <span>Equity #{ward.equity_rank}</span>
-                        <span>Heat #{ward.heat_rank}</span>
-                        <span>SC/ST {formatPct(ward.marginalized_share)}</span>
-                        <span>Gap +{ward.rank_gap}</span>
-                      </div>
+                          <div className="mt-3 grid gap-2 text-xs text-muted-foreground sm:grid-cols-4">
+                            <span>Equity #{ward.equity_rank}</span>
+                            <span>Heat #{ward.heat_rank}</span>
+                            <span>SC/ST {formatPct(ward.marginalized_share)}</span>
+                            <span>Gap +{ward.rank_gap}</span>
+                          </div>
 
-                      <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted">
-                        <div className="h-full rounded-full bg-primary" style={{ width: scoreWidth(ward.equity_priority_score) }} />
-                      </div>
-                    </button>
-                  ))}
-                </div>
+                          <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted">
+                            <div
+                              className="h-full rounded-full bg-primary"
+                              style={{ width: scoreWidth(ward.equity_priority_score) }}
+                            />
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Pagination */}
+                  <div className="flex items-center justify-between pt-3 mt-2 border-t">
+                    <span className="text-xs text-muted-foreground">
+                      Page {wardPage} of {totalPages || 1}
+                    </span>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={wardPage === 1 || wardsLoading}
+                        onClick={() => setWardPage((p) => p - 1)}
+                      >
+                        <ChevronLeft className="h-3 w-3 mr-1" />
+                        Previous
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={wardPage >= totalPages || wardsLoading}
+                        onClick={() => setWardPage((p) => p + 1)}
+                      >
+                        Next
+                        <ChevronRight className="h-3 w-3 ml-1" />
+                      </Button>
+                    </div>
+                  </div>
+                </>
               )}
             </div>
 
@@ -356,7 +421,9 @@ export default function EquityAuditPanel() {
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="text-lg font-black">{selectedWard.ward_name}</p>
-                      <p className="text-sm text-muted-foreground">{selectedWard.assembly_constituency || "Unknown constituency"}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {selectedWard.assembly_constituency || "Unknown constituency"}
+                      </p>
                     </div>
                     <Badge variant="outline" className={riskTone(selectedWard.risk_level)}>
                       {selectedWard.risk_level}
@@ -366,7 +433,9 @@ export default function EquityAuditPanel() {
                   <div className="grid grid-cols-2 gap-2">
                     <div className="rounded-md border bg-card/50 p-3">
                       <p className="text-xs uppercase font-bold text-muted-foreground">Equity Score</p>
-                      <p className="text-2xl font-black">{(selectedWard.equity_priority_score * 100).toFixed(0)}</p>
+                      <p className="text-2xl font-black">
+                        {(selectedWard.equity_priority_score * 100).toFixed(0)}
+                      </p>
                     </div>
                     <div className="rounded-md border bg-card/50 p-3">
                       <p className="text-xs uppercase font-bold text-muted-foreground">Rank Gap</p>
@@ -389,7 +458,10 @@ export default function EquityAuditPanel() {
                         <span>{(selectedWard.exposure_score * 100).toFixed(0)}</span>
                       </div>
                       <div className="h-2 overflow-hidden rounded-full bg-muted">
-                        <div className="h-full rounded-full bg-red-500" style={{ width: scoreWidth(selectedWard.exposure_score) }} />
+                        <div
+                          className="h-full rounded-full bg-red-500"
+                          style={{ width: scoreWidth(selectedWard.exposure_score) }}
+                        />
                       </div>
                     </div>
                     <div>
@@ -398,7 +470,10 @@ export default function EquityAuditPanel() {
                         <span>{(selectedWard.demographic_vulnerability * 100).toFixed(0)}</span>
                       </div>
                       <div className="h-2 overflow-hidden rounded-full bg-muted">
-                        <div className="h-full rounded-full bg-blue-500" style={{ width: scoreWidth(selectedWard.demographic_vulnerability) }} />
+                        <div
+                          className="h-full rounded-full bg-blue-500"
+                          style={{ width: scoreWidth(selectedWard.demographic_vulnerability) }}
+                        />
                       </div>
                     </div>
                   </div>
@@ -406,12 +481,15 @@ export default function EquityAuditPanel() {
                   <div className="rounded-md border bg-card/50 p-3">
                     <p className="mb-2 text-xs font-bold uppercase text-muted-foreground">Audit Finding</p>
                     <p className="text-sm">
-                      {selectedWard.flags[0] || "No major bias flag. Continue monitoring before lowering priority."}
+                      {selectedWard.flags[0] ||
+                        "No major bias flag. Continue monitoring before lowering priority."}
                     </p>
                   </div>
                 </div>
               ) : (
-                <p className="text-sm text-muted-foreground">Select a ward to inspect detailed audit signals.</p>
+                <p className="text-sm text-muted-foreground">
+                  Select a ward to inspect detailed audit signals.
+                </p>
               )}
             </div>
           </div>

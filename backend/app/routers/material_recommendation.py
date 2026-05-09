@@ -19,7 +19,7 @@ router = APIRouter(prefix="/api/materials", tags=["materials"])
 engine = create_engine(
     os.getenv("DATABASE_URL"), 
     pool_pre_ping=True, 
-    pool_recycle=3600    
+    pool_recycle=300    
 )
 
 model_path = "models/climate_material_model.pkl"

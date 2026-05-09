@@ -11,8 +11,12 @@ async def get_ward_info(ward_id: int) -> dict:
 
 async def run_simulation(ward_id: int, intensity: float) -> dict:
     """
-    Simulate the impact of green infrastructure on a ward.
-    intensity: 0.0 to 1.0 (fraction of max NDVI gain possible)
+    Simulate green infrastructure impact on a ward.
+    intensity: raw NDVI increase value, NOT percentage.
+    For green infrastructure: intensity = (percentage/100) * 0.25
+    For cooling corridors: intensity = (percentage/100) * 0.15
+    For materials: intensity = (percentage/100) * 0.05
+    Example: 30% green = 0.075
     """
     async with httpx.AsyncClient() as client:
         r = await client.post(f"{BASE_URL}/api/uhi/simulate-ward",
