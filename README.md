@@ -17,6 +17,7 @@ Bengaluru has lost over 80% of its tree cover in the last three decades. Surface
 - Simulates the temperature and carbon impact of green infrastructure interventions using a trained XGBoost model
 - Recommends climate-appropriate building materials using a Random Forest classifier trained on a custom materials dataset
 - Analyzes public sentiment about urban heat and infrastructure from Reddit and news sources using a fine-tuned RoBERTa model
+- Audits demographic equity and model bias using ward-level SC/ST population share, gender distribution, assembly constituency, heat exposure, green cover, AQI, and material affordability signals
 - Provides a conversational AI agent (Google ADK + Gemini) that autonomously chains simulations, hotspot analysis, and material recommendations in response to natural language queries from planners
 - Syncs agent responses bidirectionally with the 3D map - agent-triggered simulations fly the camera and render overlays; ward clicks on the map pre-fill agent context
 
@@ -30,17 +31,19 @@ Frontend (Next.js + TypeScript)
     Policy Simulation Engine - step-by-step intervention wizard
     Material Recommender     - ward-aware material selection UI
     UHI Interactive Map      - 2D heatmap with UHI, NDVI, AQI toggles
+    Equity Audit Tab         - constituency filters, ward bias explorer, demographic vulnerability and material fairness analysis
     Agent Chat               - floating chat panel, markdown rendering, map sync
 
 Backend (FastAPI)
     /api/uhi         - ward baselines, simulation, hotspots, city statistics
     /api/materials   - ML-powered material recommendation
+    /api/equity      - demographic equity scoring, rank-gap auditing, material fairness checks
     /api/sentiment   - ward and city-wide sentiment analysis
     /api/agent       - ADK-powered conversational agent with tool chaining
     /api/auth        - Supabase authentication
 
 Database (Supabase + PostGIS)
-    bengaluru_wards          - ward geometry, LST, NDVI, albedo, AQI
+    bengaluru_wards          - ward geometry, LST, NDVI, albedo, AQI, population demographics
     materials                - building materials with thermal and carbon properties
     public_sentiment         - Reddit/news posts with ward-level geocoding
     ward_sentiment_summary   - materialized view, refreshed on collection
@@ -69,6 +72,8 @@ All geospatial data was sourced and processed as follows:
 
 **Ward boundaries** - OpenCity Bengaluru ward KML (225 wards), loaded into PostGIS as `MultiPolygon` geometry with spatial indexing.
 
+**Ward demographics** - ward-level population, male/female population, SC/ST population, assembly constituency, and parliamentary constituency are stored in `bengaluru_wards` and used by the equity audit layer to compare heat-only priority against equity-adjusted priority.
+
 **Materials dataset** - custom dataset of ~200 building materials with thermal conductivity, SRI, embodied carbon, VOC rating, recycled content, and local availability. Cooling Index derived from thermal properties; used as training label for zone suitability classification.
 
 **Sentiment data** - collected via Reddit API (r/bangalore, r/india) and RSS news feeds. Preprocessed with spaCy, location-extracted with NER, geocoded via PostGIS, stored in `public_sentiment`. Aggregated into `ward_sentiment_summary` materialized view.
@@ -95,6 +100,12 @@ All geospatial data was sourced and processed as follows:
 - Loaded as a CPU singleton with batch inference
 - Output: positive / negative / neutral + confidence score [-1, 1]
 - Stress risk derived from sentiment score and policy category
+
+### Demographic Equity & Bias Auditor
+- Inputs: baseline LST, NDVI, AQI, SC/ST population share, female population share, assembly constituency, and material price/cooling/carbon properties
+- Output: equity priority score, heat-only vs equity-adjusted rank gap, ward-level audit flags, constituency exposure summary, and material bias risk
+- Used in: Equity Audit dashboard tab, UHI baseline/simulation metadata, hotspot auditing, and material recommendation equity notes
+- Purpose: ensures high-risk wards with marginalized populations are not silently deprioritized and checks whether recommended materials skew toward expensive geographic profiles
 
 
 
@@ -188,6 +199,8 @@ adk web --port 8001
 | `/api/uhi/bengaluru-hotspots` | GET | Top UHI wards above threshold |
 | `/api/uhi/city-statistics` | GET | City-wide temperature and risk distribution |
 | `/api/materials/recommend` | POST | ML material recommendations for a ward |
+| `/api/equity/audit` | GET | City-wide demographic equity and material bias audit |
+| `/api/equity/ward/{ward_id}` | GET | Ward-level equity score, rank gap, and audit flags |
 | `/api/sentiment/ward-sentiment/{ward_number}` | GET | Ward sentiment and stress risk |
 | `/api/agent/chat` | POST | Conversational agent with tool chaining |
 

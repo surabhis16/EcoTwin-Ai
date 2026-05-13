@@ -40,6 +40,16 @@ class ExplainInput(BaseModel):
     albedo_increase: float = Field(default=0.0, ge=0, le=0.5)
 
 
+def predict_lst(feature_frame: pd.DataFrame) -> float:
+    feature_frame = feature_frame[FEATURES].astype(float)
+    try:
+        return float(model.predict(feature_frame)[0])
+    except ValueError as exc:
+        if "feature names" not in str(exc).lower():
+            raise
+        return float(model.predict(feature_frame.to_numpy(), validate_features=False)[0])
+
+
 # Returns SHAP explanation for a UHI simulation; Explains both the before and after states, and the delta
 @router.post("/explain-simulation")
 def explain_simulation(payload: ExplainInput):
@@ -85,8 +95,8 @@ def explain_simulation(payload: ExplainInput):
     base_value = float(explainer.expected_value)
 
     # predicted LST from model
-    lst_before_pred = float(model.predict(df_before)[0])
-    lst_after_pred = float(model.predict(df_after)[0])
+    lst_before_pred = predict_lst(df_before)
+    lst_after_pred = predict_lst(df_after)
 
     # SHAP delta - how each feature's contribution changed
     shap_delta = shap_after - shap_before

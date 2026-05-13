@@ -11,6 +11,7 @@ load_dotenv()
 
 router = APIRouter(prefix="/api/uhi", tags=["UHI"])
 engine = create_engine(os.getenv("DATABASE_URL"))
+FEATURES = ["ndvi", "albedo", "lon", "lat"]
 
 MODEL_PATH = "models/uhi_xgb_monotonic_model.pkl"
 try:
@@ -61,6 +62,16 @@ def get_equity_audit_for_ward(conn, ward_id: int):
     """)).fetchall()
     metrics = build_ward_equity_metrics(rows)
     return next((row for row in metrics if row["ward_id"] == ward_id), None)
+
+
+def predict_lst(feature_frame: pd.DataFrame) -> float:
+    feature_frame = feature_frame[FEATURES].astype(float)
+    try:
+        return float(model.predict(feature_frame)[0])
+    except ValueError as exc:
+        if "feature names" not in str(exc).lower():
+            raise
+        return float(model.predict(feature_frame.to_numpy(), validate_features=False)[0])
 
 # ward metadata endpoints
 # Populates the dropdown menu automatically from the db and returns list of all wards with their IDs and names
@@ -187,8 +198,8 @@ def simulate_ward(payload: SimulationInput):
     }])
     
     # Get predictions
-    lst_before_pred = model.predict(df_before)[0]
-    lst_after_pred = model.predict(df_after)[0]
+    lst_before_pred = predict_lst(df_before)
+    lst_after_pred = predict_lst(df_after)
     
     # Calculate synthetic delta from model
     raw_delta = float(lst_after_pred - lst_before_pred)
