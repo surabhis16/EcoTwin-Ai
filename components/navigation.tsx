@@ -18,7 +18,7 @@ export function Navigation() {
             <Globe className="h-6 w-6 text-primary-foreground" />
           </div>
           <span className="text-xl font-bold tracking-tight bg-clip-text text-transparent bg-linear-to-r from-foreground to-foreground/70">
-            UrbanCool AI
+            CognitiveGov
           </span>
         </Link>
 

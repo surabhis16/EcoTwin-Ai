@@ -25,7 +25,7 @@ export function DashboardNav() {
                 />
               </svg>
             </div>
-            <span className="text-xl font-bold">UrbanCool AI</span>
+            <span className="text-xl font-bold">CognitiveGov</span>
           </div>
         </div>
 

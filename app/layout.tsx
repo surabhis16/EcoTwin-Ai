@@ -10,8 +10,8 @@ const ibmPlexSans = IBM_Plex_Sans({
 })
 
 export const metadata: Metadata = {
-  title: "UrbanCool AI - Urban Sustainability Platform",
-  description: "UHI technology for data-driven urban planning in Bengaluru",
+  title: "CognitiveGov - Urban Sustainability Platform",
+  description: "Integrating Explainable AI and Agentic Workflows for Dynamic Municipal Administration",
 }
 
 export default function RootLayout({

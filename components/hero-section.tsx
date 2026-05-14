@@ -68,7 +68,7 @@ export function HeroSection() {
           transition={{ duration: 0.8, delay: 0.2 }}
           className="text-5xl md:text-7xl lg:text-8xl font-extrabold tracking-tight mb-6 text-balance"
         >
-          UrbanCool AI: The Future of{" "}
+          CognitiveGov: The Future of{" "}
           <span className="relative inline-block">
             <span className="bg-clip-text text-transparent bg-linear-to-r from-emerald-400 to-cyan-500">
               Urban Sustainability
